@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>개인정보처리방침 | 농작이 (상월농산)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="inner">
+    <a href="/" class="logo">
+      <svg viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 2C10 2 5 6 5 11C5 13.76 7.24 16 10 16C12.76 16 15 13.76 15 11C15 6 10 2 10 2Z"/>
+        <path d="M10 16 L10 19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      상월농산
+    </a>
+    <nav>
+      <a href="/app">농작이 앱</a>
+      <a href="/subscribe">구독 안내</a>
+      <a href="/business">사업자정보</a>
+      <a href="/contact">문의</a>
+    </nav>
+  </div>
+</header>
+
+<main class="narrow">
+  <h1>개인정보처리방침</h1>
+  <p class="muted">시행일: 2026년 1월 1일</p>
+
+  <p>
+    농업회사법인 상월농산(이하 "회사")은 농작업 관리 앱 "농작이"(이하
+    "서비스") 이용자의 개인정보를 중요하게 생각하며, 개인정보 보호법 등
+    관련 법령을 준수합니다. 본 방침은 회사가 수집하는 개인정보의 항목,
+    이용 목적, 보유 기간, 이용자의 권리 등을 안내합니다.
+  </p>
+
+  <h2>1. 수집하는 개인정보 항목</h2>
+
+  <h3>가. 필수 항목</h3>
+  <ul>
+    <li><strong>계정 정보</strong>: Google 계정의 이메일, 표시 이름, 프로필 사진 URL, Firebase Auth UID</li>
+    <li><strong>농지·작업 데이터</strong>: 이용자가 직접 입력한 농지 정보(주소, 경계선 좌표, 면적, 작물, 메모), 작업 기록</li>
+    <li><strong>위치 정보</strong>: 농지 머무름 자동 감지·근처 농지 안내 기능 사용 시 단말 GPS 좌표</li>
+  </ul>
+
+  <h3>나. 자동 수집 항목</h3>
+  <ul>
+    <li>앱 버전, 안드로이드 버전, 디바이스 모델 (장애 대응 로그용)</li>
+    <li>마지막 접속 시각, 농장 코드 입력 이력 (서비스 운영용)</li>
+  </ul>
+
+  <h2>2. 개인정보 수집·이용 목적</h2>
+  <ul>
+    <li>회원 식별 및 본인 인증</li>
+    <li>농지·작업 데이터의 클라우드 저장 및 다인 공유 (농장 코드)</li>
+    <li>농지 머무름 감지 및 자동 작업 제안</li>
+    <li>서비스 개선 및 장애 대응</li>
+    <li>이용약관 위반 사용자에 대한 제한 조치</li>
+  </ul>
+
+  <h2>3. 개인정보 보유 및 이용 기간</h2>
+  <ul>
+    <li>회원 탈퇴 시: 즉시 파기 (계정·농지·작업 데이터 모두 Firestore 에서 삭제)</li>
+    <li>관련 법령에 따른 보존 의무가 있는 경우: 해당 법령이 정한 기간 동안 보관</li>
+  </ul>
+
+  <h2>4. 개인정보의 제3자 제공</h2>
+  <p>
+    회사는 이용자의 개인정보를 동의 없이 제3자에게 제공하지 않습니다.
+    단, 다음의 경우는 예외입니다.
+  </p>
+  <ul>
+    <li>이용자가 사전에 동의한 경우</li>
+    <li>법령에 의해 요청된 경우 (수사기관·법원 등)</li>
+  </ul>
+
+  <h2>5. 개인정보 처리 위탁</h2>
+  <p>회사는 서비스 제공을 위해 다음 업체에 개인정보 처리를 위탁합니다.</p>
+  <table class="info">
+    <tr>
+      <th>Google LLC (Firebase)</th>
+      <td>인증·데이터 저장·푸시 알림 (Firebase Auth, Cloud Firestore)</td>
+    </tr>
+    <tr>
+      <th>국토교통부 VWorld</th>
+      <td>지적도·주소 조회 (이용자 좌표가 일시적으로 전송됨, 저장 X)</td>
+    </tr>
+  </table>
+
+  <h2>6. 이용자의 권리</h2>
+  <p>이용자는 다음 권리를 행사할 수 있습니다.</p>
+  <ul>
+    <li>개인정보 열람·정정·삭제 요구 (앱 내 설정 또는 이메일 문의)</li>
+    <li>처리 정지 요구</li>
+    <li>회원 탈퇴 (앱 내 설정 → 회원 탈퇴)</li>
+    <li>개인정보 보호 관련 신고 (개인정보보호위원회 1833-6972, privacy.go.kr)</li>
+  </ul>
+
+  <h2>7. 안전성 확보 조치</h2>
+  <ul>
+    <li>Firebase Authentication 을 통한 안전한 로그인</li>
+    <li>Firestore Security Rules 로 농장 멤버 외 접근 차단</li>
+    <li>HTTPS 전송 구간 암호화</li>
+    <li>접근 로그 보관 및 모니터링</li>
+  </ul>
+
+  <h2>8. 위치 정보 처리</h2>
+  <ul>
+    <li>위치 정보는 이용자가 명시적으로 권한을 허가한 경우에만 수집합니다.</li>
+    <li>위치 정보는 농지 머무름 감지에만 사용하며, 서버에 별도로 저장하지 않습니다.</li>
+    <li>이용자는 디바이스 설정에서 위치 권한을 언제든 해제할 수 있습니다.</li>
+  </ul>
+
+  <h2>9. 만 14세 미만 아동 처리</h2>
+  <p>
+    본 서비스는 만 14세 이상을 대상으로 합니다. 만 14세 미만 아동의
+    개인정보는 수집하지 않습니다.
+  </p>
+
+  <h2>10. 개인정보 보호책임자</h2>
+  <table class="info">
+    <tr><th>성명</th><td>강정애 (대표이사)</td></tr>
+    <tr><th>연락처</th><td>041-732-4029</td></tr>
+    <tr><th>이메일</th><td>kja288@hanmail.net</td></tr>
+  </table>
+
+  <h2>11. 방침 변경</h2>
+  <p>
+    본 개인정보처리방침은 법령·서비스 정책 변경에 따라 개정될 수
+    있으며, 변경 시 시행일과 변경 사유를 명시하여 사전에 공지합니다.
+  </p>
+
+  <hr>
+  <p class="muted">
+    부칙: 본 방침은 2026년 1월 1일부터 시행합니다.
+  </p>
+</main>
+
+<footer class="site">
+  <div class="inner">
+    <div class="footer-brand">
+      <div class="brand">농업회사법인 상월농산</div>
+      <p>대표 강정애 · 충청남도 논산시 상월면 산성리 12-1</p>
+      <p>전화 <a href="tel:041-732-4029">041-732-4029</a> · 이메일 <a href="mailto:kja288@hanmail.net">kja288@hanmail.net</a></p>
+      <p>사업자등록번호 308-81-13067 · 통신판매업 신고 제2017-충남논산-0010호</p>
+    </div>
+    <div class="footer-links">
+      <a href="/terms">이용약관</a>
+      <a href="/privacy">개인정보처리방침</a>
+      <a href="/business">사업자정보</a>
+      <a href="/contact">문의</a>
+    </div>
+  </div>
+  <p class="footer-copy">&copy; 2026 농업회사법인 상월농산. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

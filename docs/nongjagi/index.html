@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>농작이 — 농가용 농작업 관리 앱</title>
+  <meta name="description" content="농지 등록·작업 일정·이력 관리를 한 앱에서. 농가가 직접 만든 농작업 관리 도구.">
+  <meta property="og:title" content="농작이 — 농가용 농작업 관리 앱">
+  <meta property="og:description" content="농지 등록·작업 일정·이력 관리. 농가가 직접 만든 앱.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    /* nongjagi 전용 — 농작이 단독 브랜딩. 상월농산 nav 제거. */
+    header.nongjagi {
+      background: var(--forest);
+      position: sticky; top: 0; z-index: 100;
+      height: 60px; display: flex; align-items: center;
+    }
+    header.nongjagi .inner {
+      width: 100%; max-width: var(--max);
+      margin: 0 auto; padding: 0 28px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header.nongjagi .logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 800; font-size: 18px; color: var(--white);
+      text-decoration: none;
+    }
+    header.nongjagi .logo .leaf {
+      width: 26px; height: 26px;
+      background: var(--fresh); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--forest); font-weight: 900; font-size: 14px;
+    }
+    header.nongjagi .download-mini {
+      color: var(--white); font-size: 13px; font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.4);
+      padding: 6px 14px; border-radius: 999px;
+      text-decoration: none;
+    }
+    header.nongjagi .download-mini:hover {
+      background: rgba(255,255,255,0.12);
+      color: var(--white);
+    }
+    .hero-nongjagi {
+      padding: 80px 28px 60px;
+      text-align: center;
+      background: linear-gradient(180deg, var(--mint) 0%, var(--bg) 100%);
+    }
+    .hero-nongjagi h1 {
+      font-size: clamp(34px, 6vw, 56px);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      margin: 16px 0 12px;
+      line-height: 1.15;
+    }
+    .hero-nongjagi h1 .hl { color: var(--primary); }
+    .hero-nongjagi p.lead {
+      font-size: clamp(15px, 2.2vw, 18px);
+      color: var(--text-2);
+      max-width: 560px; margin: 0 auto 28px;
+      line-height: 1.6;
+    }
+    .hero-nongjagi .badge {
+      display: inline-block;
+      background: var(--white);
+      color: var(--primary);
+      padding: 6px 14px; border-radius: 999px;
+      font-size: 12px; font-weight: 700;
+      box-shadow: var(--shadow-xs);
+      border: 1px solid var(--border);
+    }
+    .download-row {
+      display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .download-row .btn-primary {
+      background: var(--primary); color: var(--white);
+      padding: 14px 28px; border-radius: 999px;
+      font-weight: 700; font-size: 15px;
+      text-decoration: none;
+      box-shadow: var(--shadow-md);
+    }
+    .download-row .btn-primary:hover { background: var(--deep); color: var(--white); }
+    .download-row .btn-ghost {
+      background: var(--white); color: var(--primary);
+      padding: 14px 28px; border-radius: 999px;
+      font-weight: 600; font-size: 14px;
+      text-decoration: none;
+      border: 1px solid var(--border);
+    }
+    .features-grid {
+      max-width: var(--max);
+      margin: 60px auto;
+      padding: 0 28px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .feat-card {
+      background: var(--white);
+      border: 1px solid var(--border-2);
+      border-radius: var(--r);
+      padding: 22px;
+    }
+    .feat-card .icon {
+      font-size: 24px; margin-bottom: 10px;
+    }
+    .feat-card h4 {
+      margin: 0 0 6px; font-size: 15px; font-weight: 700;
+      color: var(--text);
+    }
+    .feat-card p {
+      margin: 0; font-size: 13px; line-height: 1.55;
+      color: var(--text-2);
+    }
+    .cs-section {
+      background: var(--mint);
+      padding: 60px 28px;
+      text-align: center;
+    }
+    .cs-section h2 {
+      font-size: 24px; font-weight: 800;
+      margin: 0 0 8px; color: var(--text);
+    }
+    .cs-section p.desc {
+      color: var(--text-2); margin: 0 0 24px;
+      font-size: 14px;
+    }
+    .cs-channels {
+      display: flex; gap: 10px;
+      justify-content: center; flex-wrap: wrap;
+    }
+    .cs-channels a {
+      background: var(--white);
+      border: 1px solid var(--border);
+      padding: 12px 22px; border-radius: 999px;
+      font-size: 14px; font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .cs-channels a:hover { border-color: var(--primary); color: var(--primary); }
+    footer.nongjagi {
+      background: var(--forest);
+      color: rgba(255,255,255,0.6);
+      padding: 40px 28px 30px;
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    footer.nongjagi a {
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      margin: 0 8px;
+    }
+    footer.nongjagi a:hover { color: var(--white); }
+    footer.nongjagi .bizinfo {
+      margin-top: 16px; font-size: 11px;
+      color: rgba(255,255,255,0.4);
+    }
+  </style>
+</head>
+<body>
+
+<header class="nongjagi">
+  <div class="inner">
+    <a href="/nongjagi/" class="logo">
+      <span class="leaf">농</span>
+      농작이
+    </a>
+    <a href="#download" class="download-mini">다운로드</a>
+  </div>
+</header>
+
+<section class="hero-nongjagi" id="download">
+  <span class="badge">📱 농가용 농작업 관리 앱</span>
+  <h1>
+    매일 적지 않아도<br>
+    <span class="hl">정리되는 농작업</span>
+  </h1>
+  <p class="lead">
+    여러 필지·작목반·영농대행을 한 앱에서.
+    지적도 자동조회와 머무름 자동감지로,
+    들에서 일하면서 자연스럽게 기록되는 농작업 관리.
+  </p>
+  <div class="download-row">
+    <a class="btn-primary"
+       href="https://github.com/Eunbangwool/farm-work-manager-public/releases/latest/download/Farmwork.apk">
+      ▼ 안드로이드 직접 설치 (APK)
+    </a>
+    <a class="btn-ghost" href="#features">기능 살펴보기</a>
+  </div>
+  <p style="font-size:11px; color:var(--text-3); margin-top:14px;">
+    Google Play 정식 출시 준비 중 · 갤럭시는 설치 시 자동차단 임시 해제 필요
+  </p>
+</section>
+
+<main id="features">
+  <div class="features-grid">
+    <div class="feat-card">
+      <div class="icon">🗺</div>
+      <h4>지적도 자동 조회</h4>
+      <p>주소만 입력하면 경계선·면적·좌표를 VWorld 지적도에서 자동으로. 손으로 그릴 필요 없음.</p>
+    </div>
+    <div class="feat-card">
+      <div class="icon">📋</div>
+      <h4>작업 체크리스트</h4>
+      <p>경운·시비·이앙·방제·수확 등 작업별 체크리스트 자동 세팅. 농지별 진행률 한눈에.</p>
+    </div>
+    <div class="feat-card">
+      <div class="icon">📍</div>
+      <h4>머무름 자동 감지</h4>
+      <p>농지에 일정 시간 머물면 그 농지 작업을 자동 제안·기록. 사후 정리 부담 ↓</p>
+    </div>
+    <div class="feat-card">
+      <div class="icon">👥</div>
+      <h4>가족·작목반 공유</h4>
+      <p>8자리 농장 코드로 여러 폰이 같은 데이터를 실시간 공유. 가족·직원 함께 사용.</p>
+    </div>
+    <div class="feat-card">
+      <div class="icon">🚜</div>
+      <h4>영농대행업자 연동</h4>
+      <p>7자리 업자코드로 그 업자가 내 농지에 작업 직접 기록. 의뢰부터 정산까지 한 곳에.</p>
+    </div>
+    <div class="feat-card">
+      <div class="icon">📊</div>
+      <h4>면적·작물 통계</h4>
+      <p>전체 면적·작물별 분포·작업 진행률을 한 화면에서 확인.</p>
+    </div>
+  </div>
+</main>
+
+<section class="cs-section">
+  <h2>문의·고객지원</h2>
+  <p class="desc">앱 사용 중 궁금한 점, 버그 제보, 기능 요청 환영합니다.</p>
+  <div class="cs-channels">
+    <a href="mailto:kja288@hanmail.net?subject=농작이 문의">✉️ 이메일 문의</a>
+    <!-- 카카오 채널 개설 후 아래 주석 해제 + URL 교체 -->
+    <!-- <a href="https://pf.kakao.com/_XXXXX">💬 카카오톡 채널</a> -->
+  </div>
+</section>
+
+<footer class="nongjagi">
+  <div>
+    <a href="/privacy">개인정보처리방침</a>
+    ·
+    <a href="/terms">이용약관</a>
+    ·
+    <a href="/business">사업자정보</a>
+  </div>
+  <div class="bizinfo">
+    제공: 농업회사법인 상월농산 · 사업자등록번호 308-81-13067
+  </div>
+  <div style="margin-top:8px;">&copy; 2026 농작이 (by 상월농산)</div>
+</footer>
+
+</body>
+</html>

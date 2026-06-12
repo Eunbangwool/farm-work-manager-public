@@ -1,0 +1,7 @@
+# app-ads.txt — 모바일 앱 광고 인벤토리 authorized sellers 선언 파일
+# 위치: https://www.sangwolnongsan.com/app-ads.txt (도메인 루트)
+#
+# 현재는 광고 SDK 미도입 상태의 자리(placeholder)입니다.
+# AdMob 등 광고 네트워크 도입 시 아래 형식으로 publisher 라인을 추가하세요.
+#   <도메인>, <publisher ID>, <DIRECT|RESELLER>, <certification authority ID>
+# 예) google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
