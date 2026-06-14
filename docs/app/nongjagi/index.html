@@ -629,6 +629,17 @@
             if (embeddedMapIframe) embeddedMapIframe.style.display = 'none';
         }
 
+        // 임베드 지도에 멤버 라이브 위치 마커 갱신. json = [{name,lat,lng}]
+        function setMapLiveLocations(json) {
+            try {
+                const arr = JSON.parse(json || '[]');
+                const f = embeddedMapIframe;
+                if (f && f.contentWindow && f.contentWindow.farmworkMap && f.contentWindow.farmworkMap.setLiveLocations) {
+                    f.contentWindow.farmworkMap.setLiveLocations(arr);
+                }
+            } catch (e) { console.warn('[setMapLiveLocations]', e); }
+        }
+
         /**
          * navigator.geolocation.watchPosition 활성화. 위치 변경 시 cb(lat, lng, accuracy).
          * 반환 = watchId (정수, jsClearGeolocation 으로 해제).
@@ -942,7 +953,7 @@
             // Map (OpenLayers + VWorld - Android 와 동일 구현 재사용)
             openFarmMap,
             // Compose embed 지도 (Android Compose-WebView 동등)
-            embedFarmMap, hideEmbeddedMap, recenterEmbeddedMap,
+            embedFarmMap, hideEmbeddedMap, recenterEmbeddedMap, setMapLiveLocations,
             downloadTextFile, pickTextFile,
             watchGeolocation, clearGeolocation,
             canInstallPwa, promptInstall, subscribeInstallability, detectPwaPlatform,
