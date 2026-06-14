@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0"/>
+<title>Farmwork Map</title>
+<link rel="stylesheet" href="ol.css">
+<style>
+  html, body {
+    margin:0; padding:0;
+    width:100vw; height:100vh;
+    overflow:hidden; background:#0E2A1F;
+  }
+  #map {
+    position:absolute; inset:0;
+    width:100%; height:100%;
+  }
+  .overlay {
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    color:#A8D982; font: 13px -apple-system, system-ui, sans-serif;
+    text-align:center; padding:24px; line-height:1.5;
+    pointer-events:none;
+  }
+  .overlay.error { color:#FFB4B4; }
+</style>
+</head>
+<body>
+<!-- Web 전용: 뒤로가기 버튼 (Android WebView 는 시스템 백버튼). -->
+<button id="back-btn" type="button" onclick="if(window.history.length>1)window.history.back();else window.location.href='../';"
+        style="position:fixed; top:12px; left:12px; z-index:1000;
+               background:rgba(255,255,255,0.95); border:1px solid #DDD9CC;
+               border-radius:24px; padding:8px 14px; font:600 13px sans-serif;
+               color:#1F2421; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+  ← 뒤로
+</button>
+<!-- Web 전용: 현재 위치 버튼 (navigator.geolocation → farmworkMap.recenter). -->
+<button id="loc-btn" type="button"
+        style="position:fixed; bottom:24px; right:16px; z-index:1000;
+               width:48px; height:48px; border-radius:50%;
+               background:rgba(255,255,255,0.96); border:1px solid #DDD9CC;
+               font-size:20px; cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,0.2);">
+  📍
+</button>
+<div id="map"></div>
+<div class="overlay" id="ph">지도 준비 중...</div>
+
+<script src="ol.js"></script>
+<script>
+// farmwork_map.html — Android WebView + Web 공용. Web 은 sessionStorage/URL 로 init.
+console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
+
+(function(){
+  let map, vectorSource, vectorLayer;
+  let pinSource, pinLayer;
+  let userLocSource, userLocLayer;
+  let landsRef = [];
+  // 매칭용 추가 농지 (표시 X) — 작업 지도에서 작업 외 등록 농지가 미매칭으로 표시되지 않게.
+  let registeredLandsRef = [];
+  let apiKeyRef = "";
+  // 사용자가 직접 pan/zoom 했는지 추적. true 면 데이터 재로딩 시 카메라 자동 fit 안 함.
+  let userInteracted = false;
+  // 라벨 표시 필터 — { nickname, address, businessName } 모두 boolean.
+  // Kotlin MapLabelPreferences 가 init 시 전달. 기본 3개 모두 ON.
+  let labelFilterRef = { nickname: true, address: true, businessName: true };
+
+  const COLOR = {
+    PENDING:     { fill: 'rgba(229,57,53,0.30)',  stroke: '#E53935' },
+    IN_PROGRESS: { fill: 'rgba(251,140,0,0.30)',  stroke: '#FB8C00' },
+    DONE:        { fill: 'rgba(30,136,229,0.30)', stroke: '#1E88E5' },
+    // 보류 — 일시 중단/연기. 노란색 (FARMLAND legacy 와 같은 톤이지만 의미 다름).
+    ON_HOLD:     { fill: 'rgba(253,216,53,0.35)', stroke: '#FDD835' },
+    EXCLUDED:    { fill: 'rgba(158,158,158,0.30)', stroke: '#9E9E9E' },
+    // 농지 탭 단순 표시 (legacy) - 노란색.
+    FARMLAND:    { fill: 'rgba(255,193,7,0.35)',  stroke: '#FFB300' },
+    // 농지 카테고리별 색상 (사용자 요청):
+    //  - PERSONAL (개인): 초록
+    //  - SHARED (공유): 보라
+    //  - CUSTOMER (고객, PREMIUM): 청록 (여러 고객 농장도 동일 색상 - 차후 농장별 분기 가능)
+    PERSONAL:    { fill: 'rgba(46,125,50,0.30)',  stroke: '#2E7D32' },
+    SHARED:      { fill: 'rgba(123,31,162,0.30)', stroke: '#7B1FA2' },
+    CUSTOMER:    { fill: 'rgba(0,150,136,0.30)',  stroke: '#009688' }
+  };
+
+  // 선택된 농지 위에 표시할 핀 아이콘 (드롭 핀 모양, 빨강)
+  const PIN_ICON_SRC = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="34" height="48" viewBox="0 0 34 48">' +
+      '<path d="M17 1C8.2 1 1 8.2 1 17c0 12 16 30 16 30s16-18 16-30c0-8.8-7.2-16-16-16z" ' +
+        'fill="#FF3B30" stroke="#FFFFFF" stroke-width="2.5" stroke-linejoin="round"/>' +
+      '<circle cx="17" cy="17" r="6" fill="#FFFFFF"/>' +
+    '</svg>'
+  );
+
+  function setOverlay(msg, isErr){
+    const el = document.getElementById('ph');
+    if (!el) return;
+    el.innerText = msg;
+    el.className = 'overlay' + (isErr ? ' error' : '');
+    el.style.display = msg ? 'flex' : 'none';
+  }
+
+  window.farmworkMap = {
+    // 카메라를 주어진 좌표로 이동 + 현위치 점도 거기로 갱신 (FAB '현재 위치로' 버튼용)
+    recenter: function(lat, lng){
+      try {
+        if (!map) return;
+        map.getView().setCenter(ol.proj.fromLonLat([lng, lat]));
+        map.getView().setZoom(17);
+        drawUserLocation(lat, lng);
+        console.log("[Farmwork] recentered to " + lat.toFixed(5) + "," + lng.toFixed(5));
+      } catch (e) {
+        console.warn("[Farmwork] recenter failed: " + e.message);
+      }
+    },
+    init: function(opts){
+      console.log("[Farmwork] init called, lands=" + (opts.lands||[]).length + " registered=" + (opts.registeredLands||[]).length + " apiKey=" + (opts.apiKey ? opts.apiKey.length+"chars" : "EMPTY") + " curLoc=" + (opts.currentLat != null ? opts.currentLat.toFixed(4)+","+opts.currentLng.toFixed(4) : "none") + " mapExists=" + !!map);
+      try {
+        apiKeyRef = opts.apiKey || "";
+        landsRef = opts.lands || [];
+        // 매칭용 추가 농지 — 작업 지도에서 작업 외 농지도 long-press 매칭에 포함 (PR-144 사용자 요청).
+        // 표시(렌더링) 는 lands 만. registeredLands 는 findMatchingLand 에서만 사용.
+        registeredLandsRef = opts.registeredLands || [];
+        if (opts.labelFilter) {
+          labelFilterRef = {
+            nickname: !!opts.labelFilter.nickname,
+            address: !!opts.labelFilter.address,
+            businessName: !!opts.labelFilter.businessName,
+          };
+        }
+        if (!window.ol) {
+          throw new Error("OpenLayers(window.ol) 미정의");
+        }
+        if (!apiKeyRef) {
+          throw new Error("VWorld API 키 없음");
+        }
+        if (!map) {
+          // 첫 호출: 지도 객체 + 레이어 + 클릭 핸들러 생성 (한 번만)
+          startMap(opts.focusId || null, opts.currentLat, opts.currentLng, opts.focusZoom);
+        } else {
+          // 재호출: 기존 지도 재사용. 데이터/마커만 다시 그림.
+          // 이렇게 안 하면 매번 새 ol.Map이 만들어져 클릭 핸들러가 누적/꼬여서
+          // '첫 번째 경계선만 동작하고 두 번째부터 안 눌리는' 버그 발생.
+          // 재호출 시 카메라 자동 이동 여부 — 농지 수가 0 → 양수로 바뀐 경우만 fit.
+          // (사용자가 줌/팬 후 데이터만 갱신되는 일반 케이스에 카메라 흔들리지 않게.)
+          const prevCount = vectorSource ? vectorSource.getFeatures().length : 0;
+          redrawAll();
+          drawPin(opts.focusId || null);
+          drawUserLocation(opts.currentLat, opts.currentLng);
+          if (opts.focusId) {
+            // focusId 가 있고 좌표가 있으면 카메라도 그 농지로 이동.
+            const focusLand = landsRef.find(l => l.id === opts.focusId);
+            if (focusLand && focusLand.centerLat != null && focusLand.centerLng != null) {
+              const zoom = (typeof opts.focusZoom === 'number' && opts.focusZoom > 0) ? opts.focusZoom : 18;
+              map.getView().setCenter(ol.proj.fromLonLat([focusLand.centerLng, focusLand.centerLat]));
+              map.getView().setZoom(zoom);
+              console.log("[Farmwork] re-init: camera moved to focusId=" + opts.focusId);
+            }
+          } else if (!userInteracted && vectorSource && vectorSource.getFeatures().length > 0) {
+            // 사용자가 손대지 않은 한 데이터 도착 시마다 fit. (이전 prevCount===0 가드는
+            // 첫 init 이 [] 가 아닌 lands>0 으로 들어오는 케이스를 놓침 — 사용자 보고.)
+            fitToBounds();
+          }
+        }
+        setOverlay("", false);
+        console.log("[Farmwork] map ready");
+      } catch (e) {
+        console.error("[Farmwork] init failed: " + e.message);
+        setOverlay("지도 오류: " + e.message, true);
+      }
+    }
+  };
+
+  // ===== Web 진입 자동 init =====
+  // Android(:app) 는 farmworkMap.init() 직접 호출하므로 이 경로 안 거침.
+  // Web 진입 패턴 2가지 지원:
+  //  1. sessionStorage["farmwork_map_data"] = JSON({apiKey, lands, focusId, ...})
+  //     → web index.html 의 openFarmMap() 이 이 방식으로 데이터 전달 후 navigate.
+  //  2. URL 쿼리스트링 ?key=API_KEY&lands=BASE64(JSON) — 새 탭 / 북마크용.
+  function tryAutoInit() {
+    if (typeof window === 'undefined' || !window.farmworkMap) return;
+    // 1) sessionStorage 우선
+    try {
+      const stored = sessionStorage.getItem('farmwork_map_data');
+      if (stored) {
+        const data = JSON.parse(stored);
+        sessionStorage.removeItem('farmwork_map_data');
+        window.farmworkMap.init(data);
+        return;
+      }
+    } catch (e) {
+      console.warn("[Farmwork] sessionStorage init failed: " + e.message);
+    }
+    // 2) URL 쿼리스트링 fallback
+    const qs = new URLSearchParams(window.location.search);
+    const apiKey = qs.get('key');
+    if (!apiKey) return;
+    let lands = [];
+    const landsB64 = qs.get('lands');
+    if (landsB64) {
+      try {
+        lands = JSON.parse(decodeURIComponent(escape(atob(landsB64))));
+      } catch (e) {
+        console.warn("[Farmwork] lands base64 decode failed: " + e.message);
+      }
+    }
+    window.farmworkMap.init({
+      apiKey: apiKey,
+      lands: lands,
+      focusId: qs.get('focus'),
+      labelFilter: {
+        nickname: qs.get('lbl_nick') !== '0',
+        address: qs.get('lbl_addr') !== '0',
+        businessName: qs.get('lbl_biz') !== '0',
+      },
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryAutoInit);
+  } else {
+    tryAutoInit();
+  }
+
+  // Web 전용: 현재 위치 버튼 → navigator.geolocation → recenter.
+  // Android 는 FusedLocation 으로 init 시 currentLat/Lng 전달하므로 이 버튼 미노출/미사용.
+  function wireLocationButton() {
+    const btn = document.getElementById('loc-btn');
+    if (!btn) return;
+    btn.onclick = function() {
+      if (!navigator.geolocation) {
+        alert('이 브라우저는 위치 기능을 지원하지 않습니다.');
+        return;
+      }
+      btn.textContent = '⏳';
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          btn.textContent = '📍';
+          if (window.farmworkMap && window.farmworkMap.recenter) {
+            window.farmworkMap.recenter(pos.coords.latitude, pos.coords.longitude);
+          }
+        },
+        function(err) {
+          btn.textContent = '📍';
+          alert('위치를 가져올 수 없습니다: ' + err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    };
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireLocationButton);
+  } else {
+    wireLocationButton();
+  }
+
+  function pickCenter(lands){
+    const valid = lands.filter(l => l.centerLat && l.centerLng);
+    if (valid.length === 0) return { lat: 36.5, lng: 127.5, zoom: 7 };
+    let sLat = 0, sLng = 0;
+    valid.forEach(l => { sLat += l.centerLat; sLng += l.centerLng; });
+    return { lat: sLat / valid.length, lng: sLng / valid.length, zoom: 17 };
+  }
+
+  /**
+   * 농지 feature 들의 extent 로 카메라 fit — 흩어진 농지여도 한 화면 안에 모두 들어오게.
+   * features 가 1개면 그 좌표로 setCenter + maxZoom 적용.
+   * features 가 0개면 한반도 중앙 zoom 7 (기존 fallback 유지).
+   * maxZoom: 단일 농지 또는 작은 영역에서 너무 가까이 확대되는 것 방지 (기본 16).
+   */
+  function fitToBounds(preferredZoom) {
+    if (!map || !vectorSource) return;
+    const features = vectorSource.getFeatures();
+    if (features.length === 0) {
+      // 농지 0 — 한반도 중앙으로
+      map.getView().setCenter(ol.proj.fromLonLat([127.5, 36.5]));
+      map.getView().setZoom(7);
+      return;
+    }
+    try {
+      const ext = vectorSource.getExtent();
+      const maxZoom = (typeof preferredZoom === 'number' && preferredZoom > 0) ? preferredZoom : 16;
+      map.getView().fit(ext, {
+        padding: [40, 40, 40, 40],
+        maxZoom: maxZoom,
+        duration: 250,
+      });
+      console.log("[Farmwork] fitToBounds: " + features.length + " features, maxZoom=" + maxZoom);
+    } catch (e) {
+      console.warn("[Farmwork] fitToBounds 실패", e);
+    }
+  }
+
+  function startMap(focusId, currentLat, currentLng, focusZoom){
+    const focus = focusId ? landsRef.find(l => l.id === focusId) : null;
+    const noLandCoords = !landsRef.some(l => l.centerLat != null && l.centerLng != null);
+    const effectiveFocusZoom = (typeof focusZoom === 'number' && focusZoom > 0) ? focusZoom : 18;
+    // 우선순위: focus 농지(좌표 있는 경우) > 전체 농지 평균 or 한반도 중앙(focusId 있는 경우) > 현재 위치 > 농지 평균 > 한반도 중앙
+    // focusId 가 지정됐는데 land 를 못 찾거나 좌표 없으면 현재 위치 대신 농지 평균/한반도 중앙 표시.
+    let center;
+    if (focus && focus.centerLat != null && focus.centerLng != null) {
+      center = { lat: focus.centerLat, lng: focus.centerLng, zoom: effectiveFocusZoom };
+    } else if (focusId != null) {
+      // focusId 가 있지만 land 를 아직 못 찾음(데이터 로딩 중) → 현재 위치 대신 농지 평균 or 한반도 중앙 표시
+      center = noLandCoords ? { lat: 36.5, lng: 127.5, zoom: 7 } : pickCenter(landsRef);
+    } else if (currentLat != null && currentLng != null) {
+      center = { lat: currentLat, lng: currentLng, zoom: 17 };
+    } else if (!noLandCoords) {
+      center = pickCenter(landsRef);
+    } else {
+      center = { lat: 36.5, lng: 127.5, zoom: 7 };
+    }
+    console.log("[Farmwork] center=" + center.lat.toFixed(4) + "," + center.lng.toFixed(4) + " zoom=" + center.zoom);
+
+    const satUrl = 'https://api.vworld.kr/req/wmts/1.0.0/' + apiKeyRef + '/Satellite/{z}/{y}/{x}.jpeg';
+    const hybridUrl = 'https://api.vworld.kr/req/wmts/1.0.0/' + apiKeyRef + '/Hybrid/{z}/{y}/{x}.png';
+
+    const satelliteSource = new ol.source.XYZ({
+      url: satUrl,
+      crossOrigin: 'anonymous',
+      maxZoom: 19
+    });
+    satelliteSource.on('tileloaderror', function(e){
+      console.warn("[Farmwork] satellite tile error: " + (e.tile && e.tile.src_ || ""));
+    });
+
+    const hybridSource = new ol.source.XYZ({
+      url: hybridUrl,
+      crossOrigin: 'anonymous',
+      maxZoom: 19
+    });
+
+    const satelliteLayer = new ol.layer.Tile({ source: satelliteSource });
+    const hybridLayer = new ol.layer.Tile({ source: hybridSource });
+
+    vectorSource = new ol.source.Vector();
+    vectorLayer = new ol.layer.Vector({
+      source: vectorSource,
+      style: featureStyle,
+      declutter: true
+    });
+
+    // 선택된 농지 위에 떠 있는 핀 레이어. 위성/하이브리드/경계선보다 위에 그려지도록 zIndex 100.
+    pinSource = new ol.source.Vector();
+    pinLayer = new ol.layer.Vector({
+      source: pinSource,
+      style: new ol.style.Style({
+        image: new ol.style.Icon({
+          src: PIN_ICON_SRC,
+          anchor: [0.5, 1.0],
+          anchorXUnits: 'fraction',
+          anchorYUnits: 'fraction'
+        })
+      }),
+      zIndex: 100
+    });
+
+    // (#14) 현위치 점. 파란 점 + 흰 외곽선 + 옅은 후광. 줌 무관 일정 픽셀 크기.
+    userLocSource = new ol.source.Vector();
+    userLocLayer = new ol.layer.Vector({
+      source: userLocSource,
+      style: new ol.style.Style({
+        image: new ol.style.Circle({
+          radius: 9,
+          fill: new ol.style.Fill({ color: '#1E88E5' }),
+          stroke: new ol.style.Stroke({ color: '#FFFFFF', width: 3 })
+        })
+      }),
+      zIndex: 90
+    });
+
+    map = new ol.Map({
+      target: 'map',
+      layers: [satelliteLayer, hybridLayer, vectorLayer, userLocLayer, pinLayer],
+      view: new ol.View({
+        center: ol.proj.fromLonLat([center.lng, center.lat]),
+        zoom: center.zoom,
+        maxZoom: 19,
+        minZoom: 6,
+        // 핀치 회전 비활성 → 북쪽 고정. 두 손가락 회전 제스처 시 지도가 돌아가던
+        // 사용자 보고 이슈 fix.
+        enableRotation: false
+      }),
+      // 인터랙션도 회전 관련은 비활성 (DragRotate, PinchRotate).
+      interactions: ol.interaction.defaults.defaults({
+        altShiftDragRotate: false,
+        pinchRotate: false
+      }),
+      controls: ol.control.defaults.defaults({
+        attribution: false,
+        zoom: false,
+        rotate: false
+      })
+    });
+
+    redrawAll();
+    drawPin(focusId);
+    // (#14) Kotlin이 넘겨준 현재 위치를 점으로 표시
+    drawUserLocation(currentLat, currentLng);
+    console.log("[Farmwork] features added: " + vectorSource.getFeatures().length + " pin=" + (focusId || "none") + " curLoc=" + (currentLat != null ? "yes" : "no"));
+    // focusId 가 없으면 농지 전체가 한 화면에 들어오게 카메라 fit.
+    // pickCenter 의 zoom=17 은 농지가 분산된 경우 너무 줌인 → fit-to-bounds 가 정답.
+    if (!focusId) fitToBounds();
+
+    // 컨테이너 크기 0 문제 해결: 다음 frame에서 updateSize 강제 호출
+    // + 컨테이너 크기 변경 시마다 자동 갱신 (ResizeObserver)
+    requestAnimationFrame(() => {
+      map.updateSize();
+      console.log("[Farmwork] map.updateSize() called (raf)");
+    });
+    setTimeout(() => {
+      map.updateSize();
+      console.log("[Farmwork] map.updateSize() called (100ms)");
+    }, 100);
+    setTimeout(() => {
+      map.updateSize();
+    }, 500);
+
+    try {
+      const ro = new ResizeObserver(() => {
+        if (map) map.updateSize();
+      });
+      ro.observe(document.getElementById('map'));
+      ro.observe(document.body);
+    } catch (e) {
+      console.warn("[Farmwork] ResizeObserver 미지원: " + e.message);
+    }
+    window.addEventListener('resize', () => {
+      if (map) map.updateSize();
+    });
+
+    // 강제 폴링: 2초간 100ms마다 updateSize. 컨테이너가 늦게 측정돼도 따라잡음.
+    let pollCount = 0;
+    const pollInterval = setInterval(() => {
+      pollCount++;
+      if (map) {
+        const el = document.getElementById('map');
+        const w = el ? el.offsetWidth : 0;
+        const h = el ? el.offsetHeight : 0;
+        map.updateSize();
+        if (pollCount === 1 || pollCount === 5 || pollCount === 10 || pollCount === 20) {
+          console.log("[Farmwork] poll #" + pollCount + " #map=" + w + "×" + h + " window=" + window.innerWidth + "×" + window.innerHeight);
+        }
+        if (w > 0 && h > 0) {
+          // 크기 잡혔으면 폴링 멈춤
+          if (pollCount > 3) {
+            clearInterval(pollInterval);
+            console.log("[Farmwork] 폴링 중단: 컨테이너 크기 OK (" + w + "×" + h + ")");
+          }
+        }
+      }
+      if (pollCount >= 20) {
+        clearInterval(pollInterval);
+        console.warn("[Farmwork] 폴링 종료 (20회) - 컨테이너 크기 잡히지 않음");
+      }
+    }, 100);
+
+    // 사용자 pan/zoom 감지 — programmatic fit/setCenter 는 movestart 발생 안 시키므로
+    // 'pointerdrag' / mousewheel(via 'wheel') / pinch-zoom (via touch) 를 통한 진짜 사용자 입력만 캐치.
+    map.on('pointerdrag', function() { userInteracted = true; });
+    const viewport = map.getViewport();
+    viewport.addEventListener('wheel', function() { userInteracted = true; }, { passive: true });
+    viewport.addEventListener('touchstart', function(e) {
+      // 2 손가락 = pinch zoom 시작. long-press 와 구분.
+      if (e.touches && e.touches.length >= 2) userInteracted = true;
+    }, { passive: true });
+
+    map.on('singleclick', function(evt){
+      const feat = map.forEachFeatureAtPixel(evt.pixel, f => f);
+      if (feat) {
+        const id = feat.get('landId');
+        if (!id) return;
+        // Android WebView: window.Android.onLandTap 직접 호출.
+        if (window.Android && window.Android.onLandTap) {
+          window.Android.onLandTap(id);
+          return;
+        }
+        // Web iframe embed: parent window 의 farmwork.onMapLandClick 호출.
+        // Kotlin (FarmLandMapScreen) 이 LaunchedEffect 안에서 set 한 콜백.
+        try {
+          if (window.parent && window.parent !== window &&
+              window.parent.farmwork && window.parent.farmwork.onMapLandClick) {
+            window.parent.farmwork.onMapLandClick(id);
+          }
+        } catch (e) {
+          console.warn('[farmwork_map] parent onMapLandClick 호출 실패', e);
+        }
+      }
+    });
+
+    // ===== 길게 누르기 → 해당 위치 주소 표시 =====
+    setupLongPress();
+  }
+
+  // ===== 길게 누르기 → VWorld 역지오코딩 → 주소 + 마커 표시 =====
+  let longPressTimer = null;
+  let longPressStartPx = null;
+  let longPressCoord = null;
+  let longPressLayer = null;
+  let longPressSource = null;
+  let addressOverlay = null;
+
+  function setupLongPress() {
+    if (!map) return;
+    longPressSource = new ol.source.Vector();
+    longPressLayer = new ol.layer.Vector({
+      source: longPressSource,
+      style: new ol.style.Style({
+        image: new ol.style.Icon({ src: PIN_ICON_SRC, anchor: [0.5, 1], scale: 0.9 }),
+      }),
+    });
+    map.addLayer(longPressLayer);
+
+    // 주소 카드는 OL Overlay 가 아닌 viewport 고정 bottom-sheet — click 좌표에 anchor 안 함.
+    // 좌표 anchor 시 우측/하단 edge 근처에서 카드가 잘림 (autoPan 으로도 해결 한계).
+    // 핀 마커는 그대로 click 좌표에 표시 (longPressLayer), 카드만 화면 하단 중앙 고정.
+    const div = document.createElement('div');
+    div.id = 'address-card';
+    div.style.cssText = [
+      'position:fixed',
+      'left:50%',
+      'bottom:16px',
+      'transform:translateX(-50%)',
+      'width:min(360px, calc(100vw - 24px))',
+      'background:rgba(255,255,255,0.96)',
+      'color:#222',
+      'padding:12px 14px',
+      'border-radius:10px',
+      'font:600 12px -apple-system,system-ui,sans-serif',
+      'line-height:1.5',
+      'box-shadow:0 4px 16px rgba(0,0,0,0.28)',
+      'z-index:1001',
+      'display:none',
+      'pointer-events:auto',
+      'cursor:default',
+    ].join(';') + ';';
+    document.body.appendChild(div);
+    // addressOverlay 를 plain div wrapper 로 흉내 — getElement / setPosition(undefined) 호환.
+    addressOverlay = {
+      _el: div,
+      getElement: function() { return div; },
+      setPosition: function(coord) {
+        if (coord === undefined || coord === null) div.style.display = 'none';
+        else div.style.display = '';
+      },
+    };
+
+    map.on('pointerdown', function(evt) {
+      longPressStartPx = evt.pixel.slice();
+      longPressCoord = evt.coordinate;
+      if (longPressTimer) clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(function() {
+        if (longPressCoord) handleLongPress(longPressCoord);
+        longPressTimer = null;
+      }, 500);
+    });
+
+    map.on('pointerdrag', function(evt) {
+      if (!longPressStartPx) return;
+      const dx = evt.pixel[0] - longPressStartPx[0];
+      const dy = evt.pixel[1] - longPressStartPx[1];
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) cancelLongPress();
+    });
+
+    map.on('pointerup', cancelLongPress);
+  }
+
+  function cancelLongPress() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    longPressStartPx = null;
+    longPressCoord = null;
+  }
+
+  function clearLongPress() {
+    if (longPressSource) longPressSource.clear();
+    if (addressOverlay) addressOverlay.setPosition(undefined);
+  }
+
+  // 두 좌표 간 거리(미터). Haversine.
+  function distanceMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  /** 주소 정규화 — 공백 제거 + 소문자. '충남' vs '충청남도' 같은 변형은 처리 못 하지만
+   *  대부분의 사용 사례(같은 reverse-geocode 결과로 등록한 농지 재방문)는 일치함. */
+  function normalizeAddress(addr) {
+    return String(addr || '').replace(/\s+/g, '').toLowerCase();
+  }
+
+  /**
+   * 주어진 주소와 일치하는 등록 농지 찾기 (정규화 후 정확 일치). 없으면 null.
+   *
+   * landsRef (지도에 표시되는 농지) + registeredLandsRef (작업 외 등록 농지, 매칭만)
+   * 둘 다 검색. 작업 지도에서 작업 외 농지 long-press 시 "이미 등록됨" 인식.
+   */
+  function findMatchingLandByAddress(addr) {
+    const target = normalizeAddress(addr);
+    if (!target) return null;
+    const search = function(arr) {
+      for (const l of arr) {
+        if (normalizeAddress(l.address) === target) return l;
+        // fallback: name (별명) 이 주소로 저장된 레거시 데이터 호환
+        if (normalizeAddress(l.name) === target) return l;
+      }
+      return null;
+    };
+    return search(landsRef) || search(registeredLandsRef);
+  }
+
+  /**
+   * click coord 가 어떤 등록 농지의 polygon 안에 들어가는지 확인. 안 들어가면 null.
+   * 주소 텍스트 매칭보다 robust — VWorld 가 같은 좌표에도 가끔 다른 텍스트 반환하는 케이스 회피.
+   * coord3857: [x, y] in EPSG:3857.
+   */
+  function findLandContainingCoord(coord3857) {
+    const search = function(arr) {
+      for (const l of arr) {
+        if (!l.polygonGeoJson) continue;
+        try {
+          const geom = JSON.parse(l.polygonGeoJson);
+          const feat = new ol.format.GeoJSON().readFeature(
+            { type: 'Feature', geometry: geom },
+            { featureProjection: 'EPSG:3857', dataProjection: 'EPSG:4326' }
+          );
+          if (feat.getGeometry().intersectsCoordinate(coord3857)) return l;
+        } catch (_) {}
+      }
+      return null;
+    };
+    return search(landsRef) || search(registeredLandsRef);
+  }
+
+  /**
+   * polygon 없는 등록 농지를 위해 center 근접 매칭 — 기본 80 m 반경.
+   * coord3857 = EPSG:3857, ol.sphere.getDistance 는 EPSG:4326 lonLat 입력.
+   */
+  function findLandNearCoord(coord3857, radiusMeters) {
+    const lonLat = ol.proj.toLonLat(coord3857);
+    const search = function(arr) {
+      for (const l of arr) {
+        if (l.polygonGeoJson) continue;  // polygon 있는 건 위 단계가 처리
+        if (l.centerLat == null || l.centerLng == null) continue;
+        const d = distanceMeters(lonLat[1], lonLat[0], l.centerLat, l.centerLng);
+        if (d <= radiusMeters) return l;
+      }
+      return null;
+    };
+    return search(landsRef) || search(registeredLandsRef);
+  }
+
+  /**
+   * 통합 매칭 — 우선순위:
+   *  1) polygon containment (가장 정확)
+   *  2) center 80m 근접 (polygon 없는 농지)
+   *  3) 주소 텍스트 정확 일치 (레거시 fallback)
+   * 셋 다 실패 시 null.
+   */
+  function findMatchingLand(addr, coord3857) {
+    if (coord3857) {
+      const byPoly = findLandContainingCoord(coord3857);
+      if (byPoly) return byPoly;
+      const byNear = findLandNearCoord(coord3857, 30);
+      if (byNear) return byNear;
+    }
+    return findMatchingLandByAddress(addr);
+  }
+
+  function handleLongPress(coord3857) {
+    if (!longPressSource || !addressOverlay) return;
+    longPressSource.clear();
+    const feat = new ol.Feature({ geometry: new ol.geom.Point(coord3857) });
+    longPressSource.addFeature(feat);
+
+    const lonLat = ol.proj.toLonLat(coord3857);
+    const lon = lonLat[0], lat = lonLat[1];
+    const div = addressOverlay.getElement();
+    div.innerHTML = '<div>📍 ' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</div>' +
+      '<div style="color:#666;font-weight:500;margin-top:2px">주소 조회 중…</div>';
+    addressOverlay.setPosition(coord3857);
+
+    reverseGeocodeJSONP(lat, lon, function(addr) {
+      const safeAddr = String(addr).replace(/[<>"']/g, '');
+      const matched = findMatchingLand(addr, coord3857);
+
+      // 액션 버튼 — 주소가 등록된 농지와 일치하면 '작업에 추가', 아니면 '농지로 등록'.
+      let actionsHtml = '';
+      if (matched) {
+        const landName = String(matched.name || '농지').replace(/[<>"']/g, '');
+        actionsHtml =
+          '<div style="margin-top:8px;color:#2E7D32;font-size:11px">↳ 이미 등록된 농지 '
+            + '<b>' + landName + '</b></div>' +
+          '<button id="lp-add-work-btn" style="margin-top:6px;width:100%;padding:8px;background:#2E7D32;color:#fff;border:0;border-radius:6px;font:600 12px sans-serif;cursor:pointer">' +
+          '📝 작업에 추가' +
+          '</button>';
+      } else {
+        actionsHtml =
+          '<button id="lp-add-land-btn" style="margin-top:8px;width:100%;padding:8px;background:#2E7D32;color:#fff;border:0;border-radius:6px;font:600 12px sans-serif;cursor:pointer">' +
+          '+ 농지로 등록' +
+          '</button>';
+      }
+
+      div.innerHTML =
+        '<div style="font-size:12px"><b>📍 ' + safeAddr + '</b></div>' +
+        '<div style="color:#666;font-weight:500;font-size:10px;margin-top:2px">'
+          + lat.toFixed(5) + ', ' + lon.toFixed(5) +
+        '</div>' +
+        '<div id="lp-area" style="color:#666;font-size:10px;margin-top:2px">평수 조회 중…</div>' +
+        actionsHtml +
+        '<div style="text-align:right;margin-top:4px">' +
+        '<button id="lp-close-btn" style="background:transparent;border:0;color:#888;font-size:11px;cursor:pointer;padding:2px 4px">닫기</button>' +
+        '</div>';
+
+      // 평수(면적). 매칭된 농지의 DB 면적이 있으면 즉시 사용 (VWorld 호출 없이) —
+      // VWorld 일시 실패해도 "평수 정보 없음" 안 뜨고 사용자 등록 값 유지.
+      // DB 면적 없으면 VWorld LP_PA_CBND_BUBUN parcel polygon 으로 m² 계산.
+      const renderArea = function(areaSqm) {
+        const el = document.getElementById('lp-area');
+        if (!el) return;
+        if (areaSqm && areaSqm > 0) {
+          const pyeong = areaSqm / 3.30579;
+          el.textContent = '면적 ' + Math.round(pyeong).toLocaleString() + '평 '
+            + '(' + Math.round(areaSqm).toLocaleString() + ' m²)';
+          el.style.color = '#2E7D32';
+          el.style.fontWeight = '600';
+        } else {
+          el.textContent = '평수 정보 없음';
+        }
+      };
+      if (matched && typeof matched.areaSqm === 'number' && matched.areaSqm > 0) {
+        // 매칭 농지의 DB 값 — 우선. VWorld 추가 호출 안 함.
+        renderArea(matched.areaSqm);
+      } else {
+        // 미등록 위치 또는 등록 농지에 면적 미입력 — VWorld 에서 fetch.
+        fetchParcelAreaSqm(lat, lon, renderArea);
+      }
+
+      // 핸들러 부착 (Android JS 브릿지로 콜백)
+      const closeBtn = document.getElementById('lp-close-btn');
+      if (closeBtn) closeBtn.onclick = clearLongPress;
+
+      const addLandBtn = document.getElementById('lp-add-land-btn');
+      if (addLandBtn) addLandBtn.onclick = function() {
+        if (window.Android && window.Android.onLongPressAddFarmland) {
+          window.Android.onLongPressAddFarmland(safeAddr, lat, lng);
+        } else if (window.parent && window.parent !== window &&
+                   window.parent.farmwork && window.parent.farmwork.onLongPressAddFarmland) {
+          // iframe embed (Compose 안): parent 의 콜백 호출 → 라우팅 (페이지 reload X).
+          try { window.parent.farmwork.onLongPressAddFarmland(safeAddr, lat, lng); }
+          catch (e) { console.warn('[map] parent onLongPressAddFarmland 실패', e); }
+        } else {
+          // standalone 웹: sessionStorage + navigate. Compose-wasm 의 consumePrefillFarmLand 가 소비.
+          try {
+            sessionStorage.setItem(
+              'farmwork_prefill_farmland',
+              JSON.stringify({ address: safeAddr, lat: lat, lng: lng })
+            );
+          } catch (e) { console.warn('[map] prefill 저장 실패', e); }
+          window.location.href = '../';
+        }
+        clearLongPress();
+      };
+
+      const addWorkBtn = document.getElementById('lp-add-work-btn');
+      if (addWorkBtn) addWorkBtn.onclick = function() {
+        if (window.Android && window.Android.onLongPressAddToWork) {
+          window.Android.onLongPressAddToWork(matched.id);
+        } else if (window.parent && window.parent !== window &&
+                   window.parent.farmwork && window.parent.farmwork.onLongPressAddToWork) {
+          try { window.parent.farmwork.onLongPressAddToWork(matched.id); }
+          catch (e) { console.warn('[map] parent onLongPressAddToWork 실패', e); }
+        }
+        clearLongPress();
+      };
+    });
+  }
+
+  /**
+   * 좌표 → 지번 parcel polygon → m² 면적. JSONP 호출.
+   * 1) properties.ag_geom / area 가 있으면 우선 사용
+   * 2) 없으면 polygon 좌표로 equirectangular Shoelace 자체 계산
+   * 실패 시 callback(null).
+   */
+  function fetchParcelAreaSqm(lat, lon, callback) {
+    if (!apiKeyRef) { callback(null); return; }
+    const cbName = '_vworldParcel_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    let timedOut = false;
+    const timeout = setTimeout(function() {
+      timedOut = true;
+      try { delete window[cbName]; } catch (e) {}
+      callback(null);
+    }, 8000);
+    window[cbName] = function(data) {
+      if (timedOut) return;
+      clearTimeout(timeout);
+      try { delete window[cbName]; } catch (e) {}
+      try {
+        const feat = data && data.response && data.response.result
+          && data.response.result.featureCollection
+          && data.response.result.featureCollection.features
+          && data.response.result.featureCollection.features[0];
+        if (!feat) { callback(null); return; }
+        // 1) properties 의 ag_geom / area 시도
+        const props = feat.properties || {};
+        const direct = parseFloat(props.ag_geom || props.area || '');
+        if (!isNaN(direct) && direct > 0) { callback(direct); return; }
+        // 2) polygon 자체 계산
+        const geom = feat.geometry;
+        let ring = null;
+        if (geom && geom.type === 'Polygon' && geom.coordinates) ring = geom.coordinates[0];
+        else if (geom && geom.type === 'MultiPolygon' && geom.coordinates && geom.coordinates[0]) {
+          ring = geom.coordinates[0][0];
+        }
+        callback(polygonAreaSqm(ring));
+      } catch (e) {
+        console.warn('[fetchParcel] parse err', e);
+        callback(null);
+      }
+    };
+    const url = 'https://api.vworld.kr/req/data?service=data&request=GetFeature'
+      + '&format=json&data=LP_PA_CBND_BUBUN'
+      + '&geomFilter=POINT(' + lon + '+' + lat + ')'
+      + '&size=1&key=' + apiKeyRef
+      + '&callback=' + cbName;
+    const script = document.createElement('script');
+    script.src = url;
+    script.onerror = function() {
+      try { delete window[cbName]; } catch (e) {}
+      clearTimeout(timeout);
+      callback(null);
+    };
+    document.head.appendChild(script);
+  }
+
+  /** EPSG:4326 polygon ring (lng/lat) → 미터² 면적 (equirectangular 근사). */
+  function polygonAreaSqm(coords) {
+    if (!coords || coords.length < 3) return null;
+    const R = 6378137; // WGS84 반지름 m
+    const toRad = function(d) { return d * Math.PI / 180; };
+    let latSum = 0;
+    for (let i = 0; i < coords.length; i++) latSum += coords[i][1];
+    const cosLat = Math.cos(toRad(latSum / coords.length));
+    const xy = coords.map(function(c) {
+      return [toRad(c[0]) * R * cosLat, toRad(c[1]) * R];
+    });
+    let area = 0;
+    for (let i = 0; i < xy.length; i++) {
+      const j = (i + 1) % xy.length;
+      area += xy[i][0] * xy[j][1] - xy[j][0] * xy[i][1];
+    }
+    return Math.abs(area / 2);
+  }
+
+  function reverseGeocodeJSONP(lat, lon, callback) {
+    const cbName = '_vworldRev_' + Date.now();
+    let timedOut = false;
+    const timeout = setTimeout(function() {
+      timedOut = true;
+      try { delete window[cbName]; } catch (e) {}
+      callback('주소 조회 시간 초과');
+    }, 8000);
+    window[cbName] = function(data) {
+      if (timedOut) return;
+      clearTimeout(timeout);
+      try { delete window[cbName]; } catch (e) {}
+      try {
+        if (data && data.response && data.response.status === 'OK' && data.response.result && data.response.result.length > 0) {
+          callback(data.response.result[0].text || '(주소 없음)');
+        } else {
+          callback('주소를 찾을 수 없습니다');
+        }
+      } catch (e) {
+        callback('주소 파싱 실패');
+      }
+    };
+    const url = 'https://api.vworld.kr/req/address?service=address&request=getAddress' +
+      '&version=2.0&crs=epsg:4326&type=parcel&point=' + lon + ',' + lat +
+      '&format=json&errorformat=json&key=' + encodeURIComponent(apiKeyRef) +
+      '&callback=' + cbName;
+    const script = document.createElement('script');
+    script.src = url;
+    script.onerror = function() {
+      if (timedOut) return;
+      clearTimeout(timeout);
+      callback('VWorld API 호출 실패');
+    };
+    document.head.appendChild(script);
+  }
+
+  function redrawAll(){
+    if (!vectorSource) return;
+    vectorSource.clear();
+    // 안전망 1: 같은 land.id 가 두 번 있으면 polygon 이 겹쳐 색 합성.
+    const seen = new Set();
+    const features = [];
+    landsRef.forEach(land => {
+      if (!land || !land.id) return;
+      if (seen.has(land.id)) {
+        console.warn("[Farmwork] redrawAll: 중복 land id 무시 — " + land.id);
+        return;
+      }
+      seen.add(land.id);
+      const feature = buildFeature(land);
+      if (feature) features.push(feature);
+    });
+    // 안전망 2: 한국 지적도 모지번/자지번 (297 안에 297-4 등) 같이 polygon 이 polygon 안에
+    // 들어가는 경우 — alpha(0.30) 누적으로 색 합성. 큰 polygon 먼저, 작은 polygon 은
+    // 'isInner' 플래그 → featureStyle 에서 fill alpha 0.92 (불투명) 로 안쪽이 바깥 색을 덮음.
+    const polyFeatures = [];
+    const otherFeatures = [];
+    features.forEach(f => {
+      if (f.getGeometry().getType().indexOf('Polygon') >= 0) polyFeatures.push(f);
+      else otherFeatures.push(f);
+    });
+    polyFeatures.sort((a, b) => b.getGeometry().getArea() - a.getGeometry().getArea());
+    const drawnExtents = [];
+    polyFeatures.forEach(f => {
+      const ext = f.getGeometry().getExtent();
+      if (drawnExtents.some(prev => ol.extent.containsExtent(prev, ext))) {
+        f.set('isInner', true);
+      }
+      drawnExtents.push(ext);
+    });
+    polyFeatures.forEach(f => vectorSource.addFeature(f));
+    otherFeatures.forEach(f => vectorSource.addFeature(f));
+  }
+
+  // 선택된 농지 위에 드롭 핀 마커를 그린다. focusId가 null이면 핀 제거.
+  function drawPin(focusId){
+    if (!pinSource) return;
+    pinSource.clear();
+    if (!focusId) return;
+    const land = landsRef.find(l => l.id === focusId);
+    if (!land || land.centerLat == null || land.centerLng == null) return;
+    const pinFeat = new ol.Feature({
+      geometry: new ol.geom.Point(ol.proj.fromLonLat([land.centerLng, land.centerLat]))
+    });
+    pinFeat.set('landId', land.id);
+    pinSource.addFeature(pinFeat);
+  }
+
+  // (#14) Kotlin에서 받은 현재 위치를 파란 점 마커로 표시.
+  function drawUserLocation(lat, lng){
+    if (!userLocSource) return;
+    userLocSource.clear();
+    if (lat == null || lng == null) {
+      console.log("[Farmwork] drawUserLocation skip — coords null");
+      return;
+    }
+    const feat = new ol.Feature({
+      geometry: new ol.geom.Point(ol.proj.fromLonLat([lng, lat]))
+    });
+    userLocSource.addFeature(feat);
+    console.log("[Farmwork] drawUserLocation OK " + lat.toFixed(5) + "," + lng.toFixed(5));
+  }
+
+  function buildFeature(land){
+    if (land.polygonGeoJson) {
+      try {
+        const geom = JSON.parse(land.polygonGeoJson);
+        const format = new ol.format.GeoJSON();
+        const feat = format.readFeature(
+          { type: 'Feature', geometry: geom },
+          { featureProjection: 'EPSG:3857', dataProjection: 'EPSG:4326' }
+        );
+        feat.set('landId', land.id);
+        feat.set('status', land.status);
+        feat.set('name', land.name);
+        feat.set('nickname', land.nickname || '');
+        feat.set('address', land.address || '');
+        feat.set('businessName', land.businessName || '');
+        return feat;
+      } catch (e) {
+        console.warn("[Farmwork] polygon parse failed: " + e.message);
+      }
+    }
+    if (land.centerLat && land.centerLng) {
+      const point = new ol.geom.Point(ol.proj.fromLonLat([land.centerLng, land.centerLat]));
+      const feat = new ol.Feature({ geometry: point });
+      feat.set('landId', land.id);
+      feat.set('status', land.status);
+      feat.set('name', land.name);
+      feat.set('nickname', land.nickname || '');
+      feat.set('address', land.address || '');
+      feat.set('businessName', land.businessName || '');
+      // 경계선 없이 점만 그려지는 농지 — UI 에서 경고색 + '지적도 미조회' 라벨로 식별.
+      feat.set('noPolygon', true);
+      return feat;
+    }
+    return null;
+  }
+
+  /** 라벨 필터에 따라 멀티라인 라벨 텍스트 생성. 모두 비어있으면 "" 반환.
+   *  '별명' 토글은 raw nickname 필드만 사용 (비어있으면 표시 안 함). 'name' 은
+   *  주소로 fallback 되는 값이라 별명 토글에 쓰면 사용자가 의도하지 않은 주소가 나옴. */
+  function buildLabelText(feature){
+    const parts = [];
+    if (labelFilterRef.nickname) {
+      const v = (feature.get('nickname') || '').trim();
+      if (v) parts.push(v);
+    }
+    if (labelFilterRef.address) {
+      const v = (feature.get('address') || '').trim();
+      if (v) parts.push(v);
+    }
+    if (labelFilterRef.businessName) {
+      const v = (feature.get('businessName') || '').trim();
+      if (v) parts.push(v);
+    }
+    return parts.join('\n');
+  }
+
+  function featureStyle(feature){
+    const status = feature.get('status') || 'PENDING';
+    const c = COLOR[status] || COLOR.PENDING;
+    const label = buildLabelText(feature);
+    const isPolygon = feature.getGeometry().getType().indexOf('Polygon') >= 0;
+    if (isPolygon) {
+      // 자지번(다른 polygon 안에 들어간 polygon) 은 fill 불투명에 가깝게 — alpha 합성 차단.
+      const isInner = !!feature.get('isInner');
+      const fillColor = isInner ? c.fill.replace(/0\.30\)$/, '0.92)') : c.fill;
+      return new ol.style.Style({
+        fill: new ol.style.Fill({ color: fillColor }),
+        stroke: new ol.style.Stroke({ color: c.stroke, width: 2.5 }),
+        text: new ol.style.Text({
+          text: label,
+          font: '700 12px sans-serif',
+          placement: 'point',
+          overflow: true,
+          textAlign: 'center',
+          fill: new ol.style.Fill({ color: '#FFFFFF' }),
+          stroke: new ol.style.Stroke({ color: '#000000', width: 3 })
+        })
+      });
+    }
+    // 점 마커: 라벨 줄 수에 따라 위쪽 offset 조정 (라벨 안 가리게)
+    const noPolygon = !!feature.get('noPolygon');
+    // 경계선 없는 농지는 라벨 끝에 ⚠️ 추가 + 점 색상 경고색(주황)
+    const finalLabel = noPolygon
+      ? (label ? label + '\n⚠️ 지적도 미조회' : '⚠️ 지적도 미조회')
+      : label;
+    const lineCount = finalLabel ? finalLabel.split('\n').length : 0;
+    const offsetY = -18 - (lineCount > 1 ? (lineCount - 1) * 6 : 0);
+    const pointFill = noPolygon ? '#FB8C00' : c.stroke;  // noPolygon → 주황
+    const pointStroke = noPolygon ? '#FFFFFF' : '#FFFFFF';
+    return new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: noPolygon ? 10 : 9,
+        fill: new ol.style.Fill({ color: pointFill }),
+        stroke: new ol.style.Stroke({ color: pointStroke, width: noPolygon ? 2.5 : 2 })
+      }),
+      text: new ol.style.Text({
+        text: finalLabel,
+        offsetY: offsetY,
+        font: '700 11px sans-serif',
+        overflow: true,
+        textAlign: 'center',
+        fill: new ol.style.Fill({ color: '#FFFFFF' }),
+        stroke: new ol.style.Stroke({ color: '#000000', width: 3 })
+      })
+    });
+  }
+})();
+</script>
+</body>
+</html>
