@@ -1138,7 +1138,15 @@
                 // 더 좋은 path: URL 에 farmCode 도 같이 인코딩.
                 // 그러나 사용자가 보낸 URL 은 token 만. collectionGroup("dayPasses") with token=docId 검색.
                 const { collectionGroup, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js");
-                const q = query(collectionGroup(db, 'dayPasses'), where('token', '==', token));
+                // ⚠️ Firestore 보안규칙은 필터가 아니다. dayPasses 규칙이
+                //   `resource.data.expiresAt > request.time` 을 요구하므로, 쿼리도 동일하게
+                //   `expiresAt > now` 로 제약해야 규칙과 정렬되어 PERMISSION_DENIED 가 안 난다.
+                //   (token 만 필터하면 만료 doc 도 잠재 결과라 규칙이 쿼리 전체를 거부함.)
+                const q = query(
+                    collectionGroup(db, 'dayPasses'),
+                    where('token', '==', token),
+                    where('expiresAt', '>', Date.now())
+                );
                 const snap = await getDocs(q);
                 if (snap.empty) {
                     viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 유효하지 않은 링크 — 만료됐거나 취소된 공유입니다.</div>';
