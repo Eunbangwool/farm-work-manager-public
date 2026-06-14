@@ -1,0 +1,20 @@
+{
+  "name": "농작이 - 농가용 농작업 관리",
+  "short_name": "농작이",
+  "description": "농지 등록, 작업 일정, 인력 공유를 한 곳에서. 농가가 직접 만든 농작업 관리 앱.",
+  "start_url": "/app/nongjagi/",
+  "scope": "/app/nongjagi/",
+  "display": "standalone",
+  "background_color": "#14301E",
+  "theme_color": "#14301E",
+  "orientation": "portrait",
+  "lang": "ko-KR",
+  "categories": ["productivity", "agriculture", "business"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}
