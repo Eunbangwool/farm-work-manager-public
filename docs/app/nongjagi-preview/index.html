@@ -512,6 +512,11 @@
                 const snap = await getDocs(q);
                 const codes = [];
                 snap.forEach(function(d) {
+                    // 본인이 'member' 역할인 농장만 = 진짜 참여한 공유농장.
+                    // owner/admin 역할(본인 소유·관리 농장)은 제외 — 안 그러면 본인 소유
+                    // 농장이 '공유 농장'으로 잘못 분류됨.
+                    const data = (d.data && d.data()) || {};
+                    if (data.role && data.role !== 'member') return;
                     const farmDoc = d.ref.parent.parent;  // farms/{farmCode}
                     if (farmDoc && farmDoc.id) codes.push(farmDoc.id);
                 });
