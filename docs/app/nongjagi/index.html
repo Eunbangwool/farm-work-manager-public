@@ -370,7 +370,7 @@
             getAuth, GoogleAuthProvider, signInWithPopup, signOut,
             onAuthStateChanged, setPersistence, browserLocalPersistence,
             indexedDBLocalPersistence,
-            signInAnonymously
+            signInAnonymously, reauthenticateWithPopup
         } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
         import {
             getFirestore, initializeFirestore,
@@ -947,6 +947,19 @@
             signOut: () => signOut(auth),
             onAuthStateChanged: (cb) => onAuthStateChanged(auth, cb),
             currentUser: () => auth.currentUser,
+            // 회원 탈퇴 — 최근 로그인 요구 회피 위해 Google 재인증 후 delete. 'ok' / 'err:...'
+            deleteAccount: async () => {
+                const u = auth.currentUser;
+                if (!u) return 'no-user';
+                try {
+                    await reauthenticateWithPopup(u, googleProvider);
+                    await u.delete();
+                    return 'ok';
+                } catch (e) {
+                    console.warn('deleteAccount', e);
+                    return 'err:' + (e.code || e.message || e);
+                }
+            },
             // Firestore helpers (Kotlin-friendly: string in/out)
             observeCollection, setDocByPath, updateDocByPath, deleteDocByPath, getDocByPath,
             transferOwnership,
