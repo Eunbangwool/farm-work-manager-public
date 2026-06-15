@@ -54,6 +54,7 @@ console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
   let map, vectorSource, vectorLayer;
   let pinSource, pinLayer;
   let userLocSource, userLocLayer;
+  let liveLocSource, liveLocLayer;  // 멤버 라이브 위치 마커 (지연 생성)
   let landsRef = [];
   // 매칭용 추가 농지 (표시 X) — 작업 지도에서 작업 외 등록 농지가 미매칭으로 표시되지 않게.
   let registeredLandsRef = [];
@@ -166,6 +167,40 @@ console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
       } catch (e) {
         console.error("[Farmwork] init failed: " + e.message);
         setOverlay("지도 오류: " + e.message, true);
+      }
+    },
+    // 멤버 라이브 위치 마커 갱신 (Android 라이브 위치 1:1). arr: [{uid,name,lat,lng}]
+    setLiveLocations: function(arr){
+      try {
+        if (!map || !window.ol) return;
+        if (!liveLocSource) {
+          liveLocSource = new ol.source.Vector();
+          liveLocLayer = new ol.layer.Vector({ source: liveLocSource, zIndex: 60 });
+          map.addLayer(liveLocLayer);
+        }
+        liveLocSource.clear();
+        (arr || []).forEach(function(m){
+          if (m == null || m.lat == null || m.lng == null) return;
+          var feat = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([m.lng, m.lat])) });
+          feat.setStyle(new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 7,
+              fill: new ol.style.Fill({ color: '#E5482F' }),
+              stroke: new ol.style.Stroke({ color: '#FFFFFF', width: 2 })
+            }),
+            text: new ol.style.Text({
+              text: m.name || '',
+              offsetY: -14,
+              font: '12px sans-serif',
+              fill: new ol.style.Fill({ color: '#222222' }),
+              stroke: new ol.style.Stroke({ color: '#FFFFFF', width: 3 })
+            })
+          }));
+          liveLocSource.addFeature(feat);
+        });
+        console.log("[Farmwork] setLiveLocations " + (arr ? arr.length : 0));
+      } catch (e) {
+        console.warn("[Farmwork] setLiveLocations failed: " + e.message);
       }
     }
   };
