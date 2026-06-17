@@ -1111,6 +1111,7 @@
         async function startDayPassViewer() {
             const qs = new URLSearchParams(window.location.search);
             const token = qs.get('dayPass');
+            const farmCode = qs.get('farm');  // 신규 링크엔 farmCode 동봉 → 단일 doc get
             if (!token) return;  // 일반 흐름 — 아무것도 안 함
 
             // 다른 UI 모두 숨김
@@ -1161,23 +1162,32 @@
                 // 모든 dayPass collection 을 brute search 해야. 비효율.
                 // 더 좋은 path: URL 에 farmCode 도 같이 인코딩.
                 // 그러나 사용자가 보낸 URL 은 token 만. collectionGroup("dayPasses") with token=docId 검색.
-                const { collectionGroup, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js");
-                // ⚠️ Firestore 보안규칙은 필터가 아니다. dayPasses 규칙이
-                //   `resource.data.expiresAt > request.time` 을 요구하므로, 쿼리도 동일하게
-                //   `expiresAt > now` 로 제약해야 규칙과 정렬되어 PERMISSION_DENIED 가 안 난다.
-                //   (token 만 필터하면 만료 doc 도 잠재 결과라 규칙이 쿼리 전체를 거부함.)
-                const q = query(
-                    collectionGroup(db, 'dayPasses'),
-                    where('token', '==', token),
-                    where('expiresAt', '>', Date.now())
-                );
-                const snap = await getDocs(q);
-                if (snap.empty) {
-                    viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 유효하지 않은 링크 — 만료됐거나 취소된 공유입니다.</div>';
-                    return;
+                const fs = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js");
+                let pass = null;
+                if (farmCode) {
+                    // 신규 링크: farms/{farmCode}/dayPasses/{token} 단일 doc get.
+                    //  단일 get 은 만료 doc 이면 룰이 거부(permission-denied) → 아래 catch 에서 만료 안내.
+                    const ref = fs.doc(db, 'farms', farmCode, 'dayPasses', token);
+                    const d = await fs.getDoc(ref);
+                    if (!d.exists()) {
+                        viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 유효하지 않은 링크 — 취소됐거나 존재하지 않는 공유입니다.</div>';
+                        return;
+                    }
+                    pass = d.data();
+                } else {
+                    // 구 링크(farmCode 없음) 호환: collectionGroup 쿼리. 규칙과 정렬 위해 expiresAt>now 제약.
+                    const q = fs.query(
+                        fs.collectionGroup(db, 'dayPasses'),
+                        fs.where('token', '==', token),
+                        fs.where('expiresAt', '>', Date.now())
+                    );
+                    const snap = await fs.getDocs(q);
+                    if (snap.empty) {
+                        viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 유효하지 않은 링크 — 만료됐거나 취소된 공유입니다.</div>';
+                        return;
+                    }
+                    pass = snap.docs[0].data();
                 }
-                const passDoc = snap.docs[0];
-                const pass = passDoc.data();
                 const now = Date.now();
                 if (pass.expiresAt && pass.expiresAt <= now) {
                     viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">⏰ 만료된 링크 — 24시간이 지났습니다. 발급자에게 새 링크를 요청하세요.</div>';
@@ -1185,7 +1195,12 @@
                 }
                 renderDayPassViewer(viewer, pass);
             } catch (e) {
-                viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 오류: ' + (e.message || e) + '</div>';
+                // 단일 doc get 이 만료/취소로 룰에 막히면 permission-denied → 만료 안내로 표시.
+                const denied = e && (e.code === 'permission-denied' || /insufficient permissions/i.test(e.message || ''));
+                const msg = denied
+                    ? '⏰ 만료되었거나 취소된 링크입니다 — 발급자에게 새 링크를 요청하세요.'
+                    : '❌ 오류: ' + (e.message || e);
+                viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">' + msg + '</div>';
                 console.error('[DayPassViewer] error', e);
             }
         }
