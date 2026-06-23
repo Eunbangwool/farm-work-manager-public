@@ -130,6 +130,7 @@
         row("좌표", (d.lat != null && d.lng != null) ? `${Number(d.lat).toFixed(6)}, ${Number(d.lng).toFixed(6)}` : "-") +
         row("측위 정확도", (d.accuracyM != null && d.accuracyM > 0) ? `±${Math.round(d.accuracyM)}m` : "미상") +
         row("판정", d.verdict || "-") +
+        (d.exifCheck ? row("EXIF 시각 대조", d.exifCheck) : "") +
         row("서버 기록 시각", serverTime) +
         row("앱 버전", d.appVersion || "-") +
         row("무결성 해시(SHA-256)", d.hashSha256 || "-");
