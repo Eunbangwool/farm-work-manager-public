@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>영농기록 사진 검증 | 농작이</title>
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    .verify-box { max-width: 560px; margin: 0 auto; }
+    .code-input { width: 100%; padding: 12px 14px; font-size: 16px; letter-spacing: 1px;
+      border: 1px solid #cfd8d3; border-radius: 10px; box-sizing: border-box; text-transform: uppercase; }
+    .vrow { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0;
+      border-bottom: 1px solid #eef2f0; font-size: 14px; }
+    .vrow .k { color: #6b7772; flex: 0 0 38%; }
+    .vrow .v { color: #1d2a25; text-align: right; word-break: break-all; }
+    .status { padding: 14px; border-radius: 10px; margin: 16px 0; font-size: 14px; line-height: 1.5; }
+    .ok { background: #e7f5ec; color: #1c6b3a; }
+    .err { background: #fdeced; color: #b3261e; }
+    .muted-note { font-size: 12px; color: #8a948f; line-height: 1.6; margin-top: 18px; }
+    .btn-row { margin-top: 12px; }
+  </style>
+</head>
+<body>
+
+<header class="site">
+  <div class="inner">
+    <a href="/" class="logo">
+      <svg viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 2C10 2 5 6 5 11C5 13.76 7.24 16 10 16C12.76 16 15 13.76 15 11C15 6 10 2 10 2Z"/>
+        <path d="M10 16 L10 19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      아그로이드
+    </a>
+    <nav>
+      <a href="/app">농작이 앱</a>
+      <a href="/business">사업자정보</a>
+      <a href="/contact">문의</a>
+    </nav>
+  </div>
+</header>
+
+<main class="narrow verify-box">
+  <h1>영농기록 사진 검증</h1>
+  <p class="lead">
+    사진 워터마크의 <strong>검증코드</strong>를 입력하면, 농작이 서버에 기록된 촬영 정보(시각·위치·판정·무결성 해시)를 조회해
+    대조할 수 있습니다.
+  </p>
+
+  <input id="code" class="code-input" placeholder="검증코드 (예: A1B2-C3D4-E5F6)" autocomplete="off">
+  <div class="btn-row"><button id="go" class="btn">조회</button></div>
+
+  <div id="status"></div>
+  <div id="result"></div>
+
+  <p class="muted-note">
+    ※ 본 조회 결과는 사용자가 농작이 앱으로 촬영 시점에 기록한 <strong>보조 소명자료</strong>이며, 공식 증빙·인증이 아닙니다.
+    직불금 신청·이행점검 등은 국립농산물품질관리원·Agrix·읍면동 등 관계기관 절차에 따릅니다.<br>
+    표시된 검증코드·무결성 해시(SHA-256)가 사진 워터마크와 일치하면, 해당 사진이 표시된 시각·위치에서 기록되었음을 의미합니다.
+  </p>
+</main>
+
+<footer class="site">
+  <div class="inner">
+    <div class="footer-brand">
+      <div class="brand">아그로이드</div>
+      <p>이메일 <a href="mailto:dbstjdwo28@gmail.com">dbstjdwo28@gmail.com</a></p>
+    </div>
+    <div class="footer-links">
+      <a href="/business">사업자정보</a>
+      <a href="/contact">문의</a>
+    </div>
+  </div>
+  <p class="footer-copy">&copy; 2026 아그로이드. All rights reserved.</p>
+</footer>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  // 공개 식별자 (실제 보안은 Firestore Rules — photoProofs get/익명인증 한정).
+  const firebaseConfig = {
+    apiKey: "AIzaSyCiEdJwGRBIOdgvdIvlPjnWcZSURiXS1Iw",
+    authDomain: "farm-machine-manager-prod.firebaseapp.com",
+    projectId: "farm-machine-manager-prod",
+    storageBucket: "farm-machine-manager-prod.firebasestorage.app",
+    messagingSenderId: "810632460995",
+    appId: "1:810632460995:web:69aaadbc9dc11a7cf74076"
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status"), resultEl = $("result"), codeEl = $("code");
+
+  const norm = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const group = (s) => s.match(/.{1,4}/g)?.join("-") || s;
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+  const fmtMillis = (ms) => {
+    try { return new Date(Number(ms)).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }); }
+    catch (e) { return String(ms); }
+  };
+  const timeSourceLabel = (t) => t === "NTP" ? "인터넷 표준시각(NTP)" : "기기 시각";
+
+  function row(k, v) { return `<div class="vrow"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`; }
+
+  async function lookup() {
+    const code = norm(codeEl.value);
+    resultEl.innerHTML = "";
+    if (code.length < 8) { statusEl.className = "status err"; statusEl.textContent = "검증코드를 정확히 입력해 주세요."; return; }
+    statusEl.className = "status"; statusEl.textContent = "조회 중…";
+    try {
+      if (!auth.currentUser) await signInAnonymously(auth);
+      const snap = await getDoc(doc(db, "photoProofs", code));
+      if (!snap.exists()) {
+        statusEl.className = "status err";
+        statusEl.textContent = "해당 검증코드의 기록을 찾을 수 없습니다. 코드를 다시 확인해 주세요.";
+        return;
+      }
+      const d = snap.data();
+      statusEl.className = "status ok";
+      statusEl.textContent = "농작이 서버에 기록이 확인되었습니다.";
+      const serverTime = d.createdAt && d.createdAt.toDate ? d.createdAt.toDate().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "-";
+      resultEl.innerHTML =
+        row("검증코드", group(code)) +
+        row("출처", d.issuer || "농작이") +
+        row("필지", d.fieldAddress || "-") +
+        row("촬영 시각", `${fmtMillis(d.capturedAt)} (${timeSourceLabel(d.timeSource)})`) +
+        row("좌표", (d.lat != null && d.lng != null) ? `${Number(d.lat).toFixed(6)}, ${Number(d.lng).toFixed(6)}` : "-") +
+        row("측위 정확도", (d.accuracyM != null && d.accuracyM > 0) ? `±${Math.round(d.accuracyM)}m` : "미상") +
+        row("판정", d.verdict || "-") +
+        row("서버 기록 시각", serverTime) +
+        row("앱 버전", d.appVersion || "-") +
+        row("무결성 해시(SHA-256)", d.hashSha256 || "-");
+    } catch (e) {
+      statusEl.className = "status err";
+      statusEl.textContent = "조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+      console.error(e);
+    }
+  }
+
+  $("go").addEventListener("click", lookup);
+  codeEl.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(); });
+
+  // URL ?p= 또는 ?c= 로 자동 조회
+  const params = new URLSearchParams(location.search);
+  const pre = params.get("p") || params.get("c");
+  if (pre) { codeEl.value = group(norm(pre)); lookup(); }
+</script>
+
+</body>
+</html>
