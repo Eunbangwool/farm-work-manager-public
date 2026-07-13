@@ -561,17 +561,25 @@
          * OL map 객체 유지 → 카메라 위치/줌도 유지).
          */
         let embeddedMapIframe = null;
+        // PC(넓은 창, ≥840): 좌측 세로 레일(48dp)+구분선(1dp) 만큼 들여 지도를
+        // 대시보드 콘텐츠 영역 안에 표시(전체화면 takeover 방지). 모바일은 0.
+        function mapLeftInsetPx() {
+            return (window.innerWidth >= 840) ? 49 : 0;
+        }
         function ensureMapIframe(topPx, bottomPx) {
+            const leftPx = mapLeftInsetPx();
             if (!embeddedMapIframe) {
                 const f = document.createElement('iframe');
                 f.id = 'farmwork-embedded-map';
                 f.src = 'map/farmwork_map.html';
                 // - display:block — iframe 기본 inline → bottom 4px gap 방지.
-                // - width:100vw — left/right:0 만으로는 일부 viewport (스크롤바) 에서 미세 어긋남.
+                // - width = 100vw - leftPx (PC 사이드바 폭 제외) — 대시보드 안에 안착.
                 // - height: 100vh fallback + 100dvh override — Safari < 15.4 호환.
                 f.style.cssText =
-                    'position:fixed; left:0; right:0; width:100vw; border:0; ' +
+                    'position:fixed; right:0; border:0; ' +
                     'z-index:50; background:#0E2A1F; display:block; margin:0; padding:0;';
+                f.style.left = leftPx + 'px';
+                f.style.width = `calc(100vw - ${leftPx}px)`;
                 f.style.top = topPx + 'px';
                 // 두 번 set — 두 번째 dvh 가 미지원이면 첫 번째 vh 유지.
                 f.style.height = `calc(100vh - ${topPx + bottomPx}px)`;
@@ -579,6 +587,8 @@
                 document.body.appendChild(f);
                 embeddedMapIframe = f;
             } else {
+                embeddedMapIframe.style.left = leftPx + 'px';
+                embeddedMapIframe.style.width = `calc(100vw - ${leftPx}px)`;
                 embeddedMapIframe.style.top = topPx + 'px';
                 embeddedMapIframe.style.height = `calc(100vh - ${topPx + bottomPx}px)`;
                 embeddedMapIframe.style.height = `calc(100dvh - ${topPx + bottomPx}px)`;
