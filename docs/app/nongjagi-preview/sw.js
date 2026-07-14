@@ -5,14 +5,16 @@
  *  · install: shell 파일 (index.html, manifest, 지도 HTML) precache.
  *  · navigation (HTML): network-first → 오프라인 시 cached index.html fallback.
  *    └ 새 빌드 배포 시 항상 최신 index.html (= 최신 hashed wasm 참조) 받음.
- *  · 그 외 static asset (wasm/js/css/img): stale-while-revalidate.
+ *  · 그 외 static asset (wasm/js/css/img): **network-first** (온라인이면 항상 최신, 오프라인은 캐시).
+ *    └ Compose wasm 번들은 파일명이 빌드마다 동일(해시 없음) → stale-while-revalidate 면 새 배포가
+ *      다음다음 로드에야 반영되는 문제가 있어 network-first 로 전환(배포 즉시 반영).
  *  · cross-origin (Firebase SDK CDN, Firestore API): 손대지 않음 — 브라우저 HTTP 캐시 + 네트워크.
  *  · POST/PUT/PATCH: 무시 — Firestore mutate 는 그대로 통과.
  *
  * 캐시 버전 증가 = activate 단계에서 기존 캐시 삭제 + 즉시 controller 교체.
  */
-const SHELL_CACHE = 'nongjagi-shell-v1';
-const RUNTIME_CACHE = 'nongjagi-runtime-v1';
+const SHELL_CACHE = 'nongjagi-shell-v2';
+const RUNTIME_CACHE = 'nongjagi-runtime-v2';
 
 const SHELL_FILES = [
   './',
@@ -72,20 +74,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 정적 자원: stale-while-revalidate.
-  event.respondWith(staleWhileRevalidate(req));
+  // 정적 자원(wasm/js/css/img): network-first — 온라인이면 항상 최신, 오프라인만 캐시 폴백.
+  event.respondWith(networkFirst(req));
 });
 
-async function staleWhileRevalidate(req) {
+async function networkFirst(req) {
   const cache = await caches.open(RUNTIME_CACHE);
-  const cached = await cache.match(req);
-  const network = fetch(req)
-    .then((resp) => {
-      if (resp && resp.status === 200 && (resp.type === 'basic' || resp.type === 'cors')) {
-        try { cache.put(req, resp.clone()); } catch (_) {}
-      }
-      return resp;
-    })
-    .catch(() => cached);
-  return cached || network;
+  try {
+    const resp = await fetch(req);
+    if (resp && resp.status === 200 && (resp.type === 'basic' || resp.type === 'cors')) {
+      try { cache.put(req, resp.clone()); } catch (_) {}
+    }
+    return resp;
+  } catch (_) {
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    throw new Error('offline and not cached: ' + req.url);
+  }
 }
