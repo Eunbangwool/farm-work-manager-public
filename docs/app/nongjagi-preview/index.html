@@ -556,28 +556,22 @@
 
         /**
          * Compose 화면 안에 iframe 으로 지도 embed (Android Compose-WebView 동등).
-         * top/bottom/left/right px 만큼 안쪽으로 — Compose 의 chrome(상단바/하단탭/사이드바/
-         * 좌측 목록 pane) 영역 확보. leftPx/rightPx 는 PC 2-pane 에서 지도를 우측 상세
-         * pane 안에만 가두는 용도(0 이면 기존처럼 좌우 꽉 채움).
+         * top/bottom px 만큼 안쪽으로 — Compose 의 top bar / 하단 탭바 영역 확보.
          * 같은 iframe 재사용 (재호출 = farmworkMap.init() 재호출 = 마커/폴리곤만 redraw,
          * OL map 객체 유지 → 카메라 위치/줌도 유지).
          */
         let embeddedMapIframe = null;
-        function ensureMapIframe(topPx, bottomPx, leftPx, rightPx) {
-            const l = leftPx || 0;
-            const r = rightPx || 0;
+        function ensureMapIframe(topPx, bottomPx) {
             if (!embeddedMapIframe) {
                 const f = document.createElement('iframe');
                 f.id = 'farmwork-embedded-map';
                 f.src = 'map/farmwork_map.html';
                 // - display:block — iframe 기본 inline → bottom 4px gap 방지.
-                // - width: calc(100vw - left - right) — leftPx/rightPx=0 이면 기존과 동일(꽉 참).
+                // - width:100vw — left/right:0 만으로는 일부 viewport (스크롤바) 에서 미세 어긋남.
                 // - height: 100vh fallback + 100dvh override — Safari < 15.4 호환.
                 f.style.cssText =
-                    'position:fixed; border:0; ' +
+                    'position:fixed; left:0; right:0; width:100vw; border:0; ' +
                     'z-index:50; background:#0E2A1F; display:block; margin:0; padding:0;';
-                f.style.left = l + 'px';
-                f.style.width = `calc(100vw - ${l}px - ${r}px)`;
                 f.style.top = topPx + 'px';
                 // 두 번 set — 두 번째 dvh 가 미지원이면 첫 번째 vh 유지.
                 f.style.height = `calc(100vh - ${topPx + bottomPx}px)`;
@@ -585,8 +579,6 @@
                 document.body.appendChild(f);
                 embeddedMapIframe = f;
             } else {
-                embeddedMapIframe.style.left = l + 'px';
-                embeddedMapIframe.style.width = `calc(100vw - ${l}px - ${r}px)`;
                 embeddedMapIframe.style.top = topPx + 'px';
                 embeddedMapIframe.style.height = `calc(100vh - ${topPx + bottomPx}px)`;
                 embeddedMapIframe.style.height = `calc(100dvh - ${topPx + bottomPx}px)`;
@@ -594,9 +586,9 @@
             }
             return embeddedMapIframe;
         }
-        function embedFarmMap(landsJson, focusLandId, topPx, bottomPx, labelNick, labelAddr, labelBiz, registeredLandsJson, leftPx, rightPx) {
+        function embedFarmMap(landsJson, focusLandId, topPx, bottomPx, labelNick, labelAddr, labelBiz, registeredLandsJson) {
             try {
-                const iframe = ensureMapIframe(topPx, bottomPx, leftPx, rightPx);
+                const iframe = ensureMapIframe(topPx, bottomPx);
                 const data = {
                     apiKey: VWORLD_API_KEY,
                     lands: JSON.parse(landsJson || '[]'),
