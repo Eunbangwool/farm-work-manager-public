@@ -1128,13 +1128,14 @@
             try {
                 // Firebase app 가 이미 init 됐으면 재사용 (위쪽 main script 가 init)
                 const app = getApps().length ? getApps()[0] : initializeApp({
-                    // 위쪽 firebaseConfig 와 동일 (간단히 재정의)
+                    // 위쪽 firebaseConfig 와 반드시 동일 (farm-machine-manager-prod).
+                    // 다른 프로젝트를 가리키면 dayPass doc 을 못 찾아 무조건 '유효하지 않은 링크' 가 된다.
                     apiKey: "AIzaSyCiEdJwGRBIOdgvdIvlPjnWcZSURiXS1Iw",
-                    authDomain: "farmwork-c0f87.firebaseapp.com",
-                    projectId: "farmwork-c0f87",
-                    storageBucket: "farmwork-c0f87.firebasestorage.app",
+                    authDomain: "farm-machine-manager-prod.firebaseapp.com",
+                    projectId: "farm-machine-manager-prod",
+                    storageBucket: "farm-machine-manager-prod.firebasestorage.app",
                     messagingSenderId: "810632460995",
-                    appId: "1:810632460995:web:7d0b65bcca5b9c0f87"
+                    appId: "1:810632460995:web:69aaadbc9dc11a7cf74076"
                 });
                 const auth = getAuth(app);
                 const db = getFirestore(app);
