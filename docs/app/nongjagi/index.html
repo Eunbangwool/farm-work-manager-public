@@ -1303,9 +1303,10 @@
                 const isExcluded = wl.status === 'EXCLUDED';
                 let completedInfo = '';
                 if (wl.completedDate) {
+                    const d = dpFmtDate(wl.completedDate);
                     completedInfo = wl.completedByName
-                        ? t('completedBy', { date: wl.completedDate, name: wl.completedByName })
-                        : t('completedNoName', { date: wl.completedDate });
+                        ? t('completedBy', { date: d, name: wl.completedByName })
+                        : t('completedNoName', { date: d });
                 }
                 const toggle = isExcluded ? '' :
                     `<label style="display:flex; align-items:center; gap:10px; margin-top:12px; padding:10px; border-radius:8px; background:${isDone ? '#E8F0E8' : '#FBEEEC'}; cursor:pointer; user-select:none;">
@@ -1381,9 +1382,9 @@
                         const res = await call({ token: pass.token, farmCode: pass.farmCode, workId: pass.workId, farmlandId: landId, status: next });
                         const snap = JSON.parse(pass.workSnapshot || '{}');
                         if (snap.work && Array.isArray(snap.work.lands)) {
-                            const today = String(Math.floor(Date.now() / 864e5));
+                            const todayIso = new Date().toISOString().slice(0, 10);
                             snap.work.lands = snap.work.lands.map((l) => (l && l.farmlandId === landId)
-                                ? Object.assign({}, l, { status: next, completedDate: next === 'DONE' ? today : '', completedByName: next === 'DONE' ? '1일 공유(익명)' : '' })
+                                ? Object.assign({}, l, { status: next, completedDate: next === 'DONE' ? todayIso : '', completedByName: next === 'DONE' ? '1일 공유(익명)' : '' })
                                 : l);
                             if (res && res.data) { snap.work.progressPercent = res.data.progressPercent; snap.work.progressLabel = res.data.progressLabel; }
                             pass.workSnapshot = JSON.stringify(snap);
@@ -1416,6 +1417,17 @@
                 wrap.style.display = 'block';
                 iframe.src = 'map/farmwork_map.html';
             } catch (e) { console.warn('[DayPassViewer] map mount 실패', e); }
+        }
+
+        // 완료일 표시 보정: ISO(YYYY-MM-DD)면 그대로, epochDay 숫자면 날짜로 변환.
+        // (토글 스냅샷이 epochDay 로 기록될 수 있어 방어. 원본 스냅샷은 ISO.)
+        function dpFmtDate(d) {
+            if (!d) return '';
+            const s = '' + d;
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+            const n = parseInt(s, 10);
+            if (!isNaN(n) && n > 10000 && n < 100000) return new Date(n * 86400000).toISOString().slice(0, 10);
+            return s;
         }
 
         function escapeHtml(s) {
