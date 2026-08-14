@@ -1108,6 +1108,35 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
         import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
+        // ─────────── 1일 공유 뷰어 다국어 (자동감지 + 선택기) ───────────
+        // 한국 농업 외국인 노동자 대상: 한국어·영어·베트남어·태국어·크메르어·네팔어.
+        // UI 문구만 번역(주소·농지명 등 데이터는 한국어 고유명사라 원문 유지).
+        // ⚠ km/ne 는 표준 용어 기반 — 원어민 검수 권장.
+        const DP_I18N = {
+            ko: { checking:"1일 공유 링크 확인 중…", invalidLink:"유효하지 않은 링크 — 취소됐거나 존재하지 않는 공유입니다.", expiredLink:"만료되었거나 취소된 링크입니다 — 발급자에게 새 링크를 요청하세요.", expired24:"만료된 링크 — 24시간이 지났습니다. 발급자에게 새 링크를 요청하세요.", anonFail:"익명 로그인 실패", parseFail:"데이터 파싱 실패", error:"오류", shareTitle:"1일 공유 보기", remaining:"{h}시간 {m}분 남음", sharedBy:"{name} 님이 공유", progressDone:"{label} 완료", farmlands:"농지 {n}개", mapTitle:"농지 위치", noLands:"농지 없음", noNickname:"(별명 없음)", done:"완료", incomplete:"미완료", excluded:"제외", completedBy:"{date} 완료 ({name})", completedNoName:"{date} 완료", footer:"1일 공유 링크 — 완료/미완료를 표시할 수 있습니다. 24시간 후 자동 만료됩니다.", processing:"처리 중…", toggleFail:"상태 변경 실패", langLabel:"언어", workNameFallback:"(작업명 없음)" },
+            en: { checking:"Checking share link…", invalidLink:"Invalid link — this share was canceled or does not exist.", expiredLink:"This link has expired or been canceled — please ask for a new link.", expired24:"Link expired — more than 24 hours have passed. Please ask for a new link.", anonFail:"Anonymous sign-in failed", parseFail:"Failed to load data", error:"Error", shareTitle:"1-Day Share", remaining:"{h}h {m}m left", sharedBy:"Shared by {name}", progressDone:"{label} done", farmlands:"{n} fields", mapTitle:"Field locations", noLands:"No fields", noNickname:"(no name)", done:"Done", incomplete:"Not done", excluded:"Excluded", completedBy:"completed {date} ({name})", completedNoName:"completed {date}", footer:"1-day share link — you can mark tasks done / not done. Expires automatically after 24 hours.", processing:"Processing…", toggleFail:"Failed to change status", langLabel:"Language", workNameFallback:"(no name)" },
+            vi: { checking:"Đang kiểm tra liên kết chia sẻ…", invalidLink:"Liên kết không hợp lệ — chia sẻ đã bị hủy hoặc không tồn tại.", expiredLink:"Liên kết đã hết hạn hoặc bị hủy — vui lòng yêu cầu liên kết mới.", expired24:"Liên kết đã hết hạn — đã quá 24 giờ. Vui lòng yêu cầu liên kết mới.", anonFail:"Đăng nhập ẩn danh thất bại", parseFail:"Không tải được dữ liệu", error:"Lỗi", shareTitle:"Chia sẻ 1 ngày", remaining:"Còn {h} giờ {m} phút", sharedBy:"Chia sẻ bởi {name}", progressDone:"{label} hoàn thành", farmlands:"{n} thửa ruộng", mapTitle:"Vị trí thửa ruộng", noLands:"Không có thửa ruộng", noNickname:"(không có tên)", done:"Hoàn thành", incomplete:"Chưa xong", excluded:"Loại trừ", completedBy:"hoàn thành {date} ({name})", completedNoName:"hoàn thành {date}", footer:"Liên kết chia sẻ 1 ngày — bạn có thể đánh dấu hoàn thành / chưa xong. Tự động hết hạn sau 24 giờ.", processing:"Đang xử lý…", toggleFail:"Không thể thay đổi trạng thái", langLabel:"Ngôn ngữ", workNameFallback:"(không có tên)" },
+            th: { checking:"กำลังตรวจสอบลิงก์แชร์…", invalidLink:"ลิงก์ไม่ถูกต้อง — การแชร์ถูกยกเลิกหรือไม่มีอยู่", expiredLink:"ลิงก์หมดอายุหรือถูกยกเลิก — กรุณาขอลิงก์ใหม่", expired24:"ลิงก์หมดอายุ — เกิน 24 ชั่วโมงแล้ว กรุณาขอลิงก์ใหม่", anonFail:"เข้าสู่ระบบแบบไม่ระบุตัวตนล้มเหลว", parseFail:"โหลดข้อมูลไม่สำเร็จ", error:"ข้อผิดพลาด", shareTitle:"แชร์ 1 วัน", remaining:"เหลือ {h} ชั่วโมง {m} นาที", sharedBy:"แชร์โดย {name}", progressDone:"{label} เสร็จ", farmlands:"{n} แปลง", mapTitle:"ตำแหน่งแปลงนา", noLands:"ไม่มีแปลง", noNickname:"(ไม่มีชื่อ)", done:"เสร็จแล้ว", incomplete:"ยังไม่เสร็จ", excluded:"ยกเว้น", completedBy:"เสร็จ {date} ({name})", completedNoName:"เสร็จ {date}", footer:"ลิงก์แชร์ 1 วัน — คุณสามารถทำเครื่องหมายเสร็จ / ยังไม่เสร็จ หมดอายุอัตโนมัติใน 24 ชั่วโมง", processing:"กำลังดำเนินการ…", toggleFail:"เปลี่ยนสถานะไม่สำเร็จ", langLabel:"ภาษา", workNameFallback:"(ไม่มีชื่อ)" },
+            km: { checking:"កំពុងពិនិត្យតំណចែករំលែក…", invalidLink:"តំណមិនត្រឹមត្រូវ — ការចែករំលែកត្រូវបានលុបចោល ឬមិនមាន។", expiredLink:"តំណផុតកំណត់ ឬត្រូវបានលុបចោល — សូមស្នើសុំតំណថ្មី។", expired24:"តំណផុតកំណត់ — លើសពី ២៤ ម៉ោង។ សូមស្នើសុំតំណថ្មី។", anonFail:"ការចូលអនាមិកបានបរាជ័យ", parseFail:"មិនអាចផ្ទុកទិន្នន័យ", error:"កំហុស", shareTitle:"ការចែករំលែក ១ ថ្ងៃ", remaining:"នៅសល់ {h} ម៉ោង {m} នាទី", sharedBy:"ចែករំលែកដោយ {name}", progressDone:"{label} រួចរាល់", farmlands:"ដីស្រែ {n}", mapTitle:"ទីតាំងដីស្រែ", noLands:"គ្មានដីស្រែ", noNickname:"(គ្មានឈ្មោះ)", done:"រួចរាល់", incomplete:"មិនទាន់រួច", excluded:"លើកលែង", completedBy:"រួចរាល់ {date} ({name})", completedNoName:"រួចរាល់ {date}", footer:"តំណចែករំលែក ១ ថ្ងៃ — អ្នកអាចសម្គាល់ថារួច / មិនទាន់រួច។ ផុតកំណត់ស្វ័យប្រវត្តិក្នុង ២៤ ម៉ោង។", processing:"កំពុងដំណើរការ…", toggleFail:"មិនអាចផ្លាស់ប្តូរស្ថានភាព", langLabel:"ភាសា", workNameFallback:"(គ្មានឈ្មោះ)" },
+            ne: { checking:"साझेदारी लिङ्क जाँच गर्दै…", invalidLink:"अमान्य लिङ्क — यो साझेदारी रद्द गरिएको वा अवस्थित छैन।", expiredLink:"लिङ्कको म्याद सकियो वा रद्द गरियो — कृपया नयाँ लिङ्क माग्नुहोस्।", expired24:"लिङ्कको म्याद सकियो — २४ घण्टाभन्दा बढी भयो। कृपया नयाँ लिङ्क माग्नुहोस्।", anonFail:"बेनामी साइन-इन असफल", parseFail:"डेटा लोड गर्न सकिएन", error:"त्रुटि", shareTitle:"१ दिने साझेदारी", remaining:"{h} घण्टा {m} मिनेट बाँकी", sharedBy:"{name} द्वारा साझा", progressDone:"{label} सम्पन्न", farmlands:"{n} खेत", mapTitle:"खेतको स्थान", noLands:"खेत छैन", noNickname:"(नाम छैन)", done:"सम्पन्न", incomplete:"बाँकी", excluded:"बहिष्कृत", completedBy:"सम्पन्न {date} ({name})", completedNoName:"सम्पन्न {date}", footer:"१ दिने साझेदारी लिङ्क — तपाईं सम्पन्न / बाँकी चिन्ह लगाउन सक्नुहुन्छ। २४ घण्टापछि स्वतः म्याद सकिन्छ।", processing:"प्रशोधन गर्दै…", toggleFail:"स्थिति परिवर्तन गर्न सकिएन", langLabel:"भाषा", workNameFallback:"(नाम छैन)" },
+        };
+        const DP_LANG_NAMES = { ko:"한국어", en:"English", vi:"Tiếng Việt", th:"ไทย", km:"ខ្មែរ", ne:"नेपाली" };
+        function dpDetectLang() {
+            try { const s = localStorage.getItem('dp_lang'); if (s && DP_I18N[s]) return s; } catch (e) {}
+            const cands = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'ko'];
+            for (const l of cands) { const p = ('' + l).slice(0, 2).toLowerCase(); if (DP_I18N[p]) return p; }
+            return 'ko';
+        }
+        let dpLang = dpDetectLang();
+        function t(key, params) {
+            let s = (DP_I18N[dpLang] && DP_I18N[dpLang][key]) || DP_I18N.ko[key] || key;
+            if (params) for (const k in params) s = s.split('{' + k + '}').join(params[k]);
+            return s;
+        }
+        function dpMsg(text, color) {
+            return '<div style="text-align:center; padding:40px; color:' + (color || '#8C3A33') + ';">' + text + '</div>';
+        }
+
         async function startDayPassViewer() {
             const qs = new URLSearchParams(window.location.search);
             const token = qs.get('dayPass');
@@ -1123,7 +1152,7 @@
             if (loading) loading.style.display = 'none';
             const viewer = document.getElementById('daypass-viewer');
             viewer.style.display = 'block';
-            viewer.innerHTML = '<div style="text-align:center; padding: 40px;">📨 1일 공유 링크 확인 중…</div>';
+            viewer.innerHTML = '<div style="text-align:center; padding: 40px;">📨 ' + t('checking') + '</div>';
 
             try {
                 // Firebase app 가 이미 init 됐으면 재사용 (위쪽 main script 가 init)
@@ -1148,7 +1177,7 @@
                             try {
                                 await signInAnonymously(auth);
                             } catch (e) {
-                                viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 익명 로그인 실패: ' + e.message + '<br><small>Firebase Console 의 Authentication > Sign-in method > Anonymous 를 활성화해야 합니다.</small></div>';
+                                viewer.innerHTML = dpMsg('❌ ' + t('anonFail') + ': ' + e.message);
                                 return;
                             }
                         }
@@ -1171,7 +1200,7 @@
                     const ref = fs.doc(db, 'farms', farmCode, 'dayPasses', token);
                     const d = await fs.getDoc(ref);
                     if (!d.exists()) {
-                        viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 유효하지 않은 링크 — 취소됐거나 존재하지 않는 공유입니다.</div>';
+                        viewer.innerHTML = dpMsg('❌ ' + t('invalidLink'));
                         return;
                     }
                     pass = d.data();
@@ -1184,26 +1213,40 @@
                     );
                     const snap = await fs.getDocs(q);
                     if (snap.empty) {
-                        viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 유효하지 않은 링크 — 만료됐거나 취소된 공유입니다.</div>';
+                        viewer.innerHTML = dpMsg('❌ ' + t('invalidLink'));
                         return;
                     }
                     pass = snap.docs[0].data();
                 }
                 const now = Date.now();
                 if (pass.expiresAt && pass.expiresAt <= now) {
-                    viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">⏰ 만료된 링크 — 24시간이 지났습니다. 발급자에게 새 링크를 요청하세요.</div>';
+                    viewer.innerHTML = dpMsg('⏰ ' + t('expired24'));
                     return;
                 }
                 renderDayPassViewer(viewer, pass);
             } catch (e) {
                 // 단일 doc get 이 만료/취소로 룰에 막히면 permission-denied → 만료 안내로 표시.
                 const denied = e && (e.code === 'permission-denied' || /insufficient permissions/i.test(e.message || ''));
-                const msg = denied
-                    ? '⏰ 만료되었거나 취소된 링크입니다 — 발급자에게 새 링크를 요청하세요.'
-                    : '❌ 오류: ' + (e.message || e);
-                viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">' + msg + '</div>';
+                viewer.innerHTML = dpMsg(denied ? '⏰ ' + t('expiredLink') : '❌ ' + t('error') + ': ' + (e.message || e));
                 console.error('[DayPassViewer] error', e);
             }
+        }
+
+        // 한글 → 로마자 (Revised Romanization, 음절 단위). 농지 주소 영어 표기용.
+        function romanizeKorean(str) {
+            if (!str) return '';
+            const CHO = ["g","kk","n","d","tt","r","m","b","pp","s","ss","","j","jj","ch","k","t","p","h"];
+            const JU = ["a","ae","ya","yae","eo","e","yeo","ye","o","wa","wae","oe","yo","u","wo","we","wi","yu","eu","ui","i"];
+            const JO = ["","k","k","k","n","n","n","t","l","k","m","l","l","l","p","l","m","p","p","t","t","ng","t","t","k","t","p","t"];
+            let out = '';
+            for (const ch of ('' + str)) {
+                const c = ch.charCodeAt(0);
+                if (c >= 0xAC00 && c <= 0xD7A3) {
+                    const s = c - 0xAC00;
+                    out += CHO[Math.floor(s / 588)] + JU[Math.floor((s % 588) / 28)] + JO[s % 28];
+                } else { out += ch; }
+            }
+            return out.replace(/(^|\s)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
         }
 
         function renderDayPassViewer(viewer, pass) {
@@ -1211,7 +1254,7 @@
             try {
                 snapshot = JSON.parse(pass.workSnapshot || '{}');
             } catch (e) {
-                viewer.innerHTML = '<div style="text-align:center; padding:40px; color:#8C3A33;">❌ 데이터 파싱 실패: ' + e.message + '</div>';
+                viewer.innerHTML = dpMsg('❌ ' + t('parseFail') + ': ' + e.message);
                 return;
             }
             const work = snapshot.work || {};
@@ -1223,47 +1266,154 @@
             const remainHr = Math.max(0, Math.floor(remainMs / 3600000));
             const remainMin = Math.max(0, Math.floor((remainMs % 3600000) / 60000));
 
+            // 이진 상태 배지: DONE=완료, EXCLUDED=제외, 그 외=미완료.
             const statusBadge = (s) => {
-                const map = { PENDING: ['미완료', '#B54B40'], IN_PROGRESS: ['진행중', '#CC8B27'], DONE: ['완료', '#3D6E72'], EXCLUDED: ['제외', '#9A9A95'] };
-                const [text, color] = map[s] || ['?', '#999'];
+                let text, color;
+                if (s === 'DONE') { text = t('done'); color = '#3D6E72'; }
+                else if (s === 'EXCLUDED') { text = t('excluded'); color = '#9A9A95'; }
+                else { text = t('incomplete'); color = '#B54B40'; }
                 return `<span style="background:${color}; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;">${text}</span>`;
+            };
+
+            // 네이버/카카오 길찾기 — 검색 쿼리는 원문(한글) 주소가 가장 정확. 없으면 좌표/별명.
+            const navBrand = dpLang === 'ko' ? { n: '네이버', k: '카카오' } : { n: 'Naver', k: 'Kakao' };
+            const navButtons = (land) => {
+                const qRaw = (land.address && land.address.length) ? land.address
+                    : (land.centerLat != null && land.centerLng != null) ? (land.centerLat + ',' + land.centerLng)
+                    : (land.nickname || '');
+                if (!qRaw) return '';
+                const q = encodeURIComponent(qRaw);
+                const btn = (href, label, bg, fg) => `<a href="${href}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none; padding:11px; border-radius:8px; font-size:14px; font-weight:700; color:${fg}; background:${bg};">🧭 ${label}</a>`;
+                return `<div style="display:flex; gap:8px; margin-top:10px;">`
+                    + btn('https://map.naver.com/p/search/' + q, navBrand.n, '#03C75A', '#fff')
+                    + btn('https://map.kakao.com/link/search/' + q, navBrand.k, '#FEE500', '#3C1E1E')
+                    + `</div>`;
             };
 
             const landsHtml = (work.lands || []).map((wl) => {
                 const land = landById[wl.farmlandId] || {};
-                const nick = land.nickname || '(별명 없음)';
-                const addr = land.address || '';
+                const nick = land.nickname || t('noNickname');
+                const addrEn = land.address ? romanizeKorean(land.address) : '';  // 주소는 항상 영어(로마자)
                 const biz = land.businessName || '';
                 const crop = land.cropName || '';
-                const completedInfo = wl.completedDate ? ` · ${wl.completedDate} 완료${wl.completedByName ? ' (' + wl.completedByName + ')' : ''}` : '';
+                const isDone = wl.status === 'DONE';
+                const isExcluded = wl.status === 'EXCLUDED';
+                let completedInfo = '';
+                if (wl.completedDate) {
+                    completedInfo = wl.completedByName
+                        ? t('completedBy', { date: wl.completedDate, name: wl.completedByName })
+                        : t('completedNoName', { date: wl.completedDate });
+                }
+                const toggle = isExcluded ? '' :
+                    `<label style="display:flex; align-items:center; gap:10px; margin-top:12px; padding:10px; border-radius:8px; background:${isDone ? '#E8F0E8' : '#FBEEEC'}; cursor:pointer; user-select:none;">
+                        <input type="checkbox" class="dp-toggle" data-landid="${escapeHtml(wl.farmlandId)}" ${isDone ? 'checked' : ''} style="width:22px; height:22px; accent-color:#2F5D3D; cursor:pointer; flex:none;">
+                        <span style="font-size:15px; font-weight:700; color:${isDone ? '#2F5D3D' : '#B54B40'};">${isDone ? t('done') : t('incomplete')}</span>
+                    </label>`;
                 return `<div style="background:#fff; border:0.5px solid #DDD9CC; border-radius:8px; padding:12px; margin:8px 0;">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <div style="font-weight:600; font-size:15px; flex:1;">📍 ${escapeHtml(nick)}</div>
                         ${statusBadge(wl.status)}
                     </div>
-                    ${addr ? `<div style="font-size:12px; color:#6B7068; margin-top:4px;">${escapeHtml(addr)}</div>` : ''}
+                    ${addrEn ? `<div style="font-size:12px; color:#6B7068; margin-top:4px;">${escapeHtml(addrEn)}</div>` : ''}
                     <div style="font-size:11px; color:#6B7068; margin-top:4px;">
-                        ${biz ? '🧑‍🌾 ' + escapeHtml(biz) + ' · ' : ''}🌾 ${escapeHtml(crop)}${completedInfo ? ' · ' + escapeHtml(completedInfo) : ''}
+                        ${biz ? '🧑‍🌾 ' + escapeHtml(biz) + ' · ' : ''}${crop ? '🌾 ' + escapeHtml(crop) : ''}${completedInfo ? ' · ' + escapeHtml(completedInfo) : ''}
                     </div>
                     ${wl.memo ? `<div style="font-size:12px; color:#1F2421; margin-top:6px; padding:6px; background:#FAF9F4; border-radius:4px;">📝 ${escapeHtml(wl.memo)}</div>` : ''}
+                    ${navButtons(land)}
+                    ${toggle}
                 </div>`;
             }).join('');
+
+            const langSel = `<select id="dp-lang" style="background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.4); border-radius:6px; padding:4px 8px; font-size:12px; flex:none;">`
+                + Object.keys(DP_LANG_NAMES).map((k) => `<option value="${k}" ${k === dpLang ? 'selected' : ''} style="color:#1F2421;">${DP_LANG_NAMES[k]}</option>`).join('')
+                + `</select>`;
 
             viewer.innerHTML = `
                 <div style="max-width:680px; margin: 0 auto;">
                     <div style="background:#2F5D3D; color:#fff; padding:16px; border-radius:10px; margin-bottom:12px;">
-                        <div style="font-size:12px; opacity:0.85;">📨 1일 공유 보기 · ${remainHr}시간 ${remainMin}분 남음</div>
-                        <div style="font-size:20px; font-weight:700; margin-top:6px;">${escapeHtml(work.name || '(작업명 없음)')}</div>
-                        <div style="font-size:13px; opacity:0.9; margin-top:2px;">${escapeHtml(work.workType || '')} · ${escapeHtml(work.progressLabel || '')} 완료</div>
-                        ${pass.createdByName ? `<div style="font-size:11px; opacity:0.75; margin-top:8px;">${escapeHtml(pass.createdByName)} 님이 공유</div>` : ''}
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <div style="font-size:12px; opacity:0.85; flex:1;">📨 ${t('shareTitle')} · ${t('remaining', { h: remainHr, m: remainMin })}</div>
+                            ${langSel}
+                        </div>
+                        <div style="font-size:20px; font-weight:700; margin-top:6px;">${escapeHtml(work.name || t('workNameFallback'))}</div>
+                        <div style="font-size:13px; opacity:0.9; margin-top:2px;">${escapeHtml(work.workType || '')}${work.progressLabel ? ' · ' + t('progressDone', { label: escapeHtml(work.progressLabel) }) : ''}</div>
+                        ${pass.createdByName ? `<div style="font-size:11px; opacity:0.75; margin-top:8px;">${t('sharedBy', { name: escapeHtml(pass.createdByName) })}</div>` : ''}
                     </div>
-                    <div style="font-size:13px; color:#6B7068; margin: 0 4px 8px;">농지 ${(work.lands || []).length}개</div>
-                    ${landsHtml || '<div style="text-align:center; padding:20px; color:#A8AAA5;">농지 없음</div>'}
+                    <div id="dp-map-wrap" style="margin:0 0 12px; border-radius:10px; overflow:hidden; border:0.5px solid #DDD9CC; display:none;">
+                        <div style="background:#2F5D3D; color:#fff; font-size:12px; padding:6px 12px;">🗺️ ${t('mapTitle')}</div>
+                        <iframe id="dp-map" title="${t('mapTitle')}" style="width:100%; height:320px; border:0; display:block;"></iframe>
+                    </div>
+                    <div style="font-size:13px; color:#6B7068; margin: 0 4px 8px;">${t('farmlands', { n: (work.lands || []).length })}</div>
+                    ${landsHtml || `<div style="text-align:center; padding:20px; color:#A8AAA5;">${t('noLands')}</div>`}
                     <div style="text-align:center; font-size:11px; color:#A8AAA5; margin: 16px 0 32px;">
-                        이 화면은 읽기 전용 1일 공유입니다. 24시간 후 자동 만료됩니다.
+                        ${t('footer')}
                     </div>
                 </div>
             `;
+            const sel = document.getElementById('dp-lang');
+            if (sel) sel.addEventListener('change', (e) => {
+                dpLang = e.target.value;
+                try { localStorage.setItem('dp_lang', dpLang); } catch (x) {}
+                renderDayPassViewer(viewer, pass);
+            });
+            mountDayPassMap(farmLands);
+            attachDayPassToggles(viewer, pass);
+        }
+
+        // 완료/미완료 토글 — updateDayPassWork Cloud Function 호출(URL token 이 인가 근거).
+        // 성공 시 로컬 스냅샷 갱신 후 재렌더. 함수 미배포/오류 시 alert 안내.
+        function attachDayPassToggles(viewer, pass) {
+            viewer.querySelectorAll('.dp-toggle').forEach((cb) => {
+                cb.addEventListener('change', async () => {
+                    if (cb.disabled) return;
+                    const landId = cb.getAttribute('data-landid');
+                    const next = cb.checked ? 'DONE' : 'PENDING';  // 완료/미완료 이진
+                    const label = cb.parentElement && cb.parentElement.querySelector('span');
+                    const prevLabel = label ? label.textContent : '';
+                    cb.disabled = true;
+                    if (label) label.textContent = t('processing');
+                    try {
+                        const app = getApps()[0];
+                        const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js");
+                        const call = httpsCallable(getFunctions(app, "asia-northeast3"), "updateDayPassWork");
+                        const res = await call({ token: pass.token, farmCode: pass.farmCode, workId: pass.workId, farmlandId: landId, status: next });
+                        const snap = JSON.parse(pass.workSnapshot || '{}');
+                        if (snap.work && Array.isArray(snap.work.lands)) {
+                            const today = String(Math.floor(Date.now() / 864e5));
+                            snap.work.lands = snap.work.lands.map((l) => (l && l.farmlandId === landId)
+                                ? Object.assign({}, l, { status: next, completedDate: next === 'DONE' ? today : '', completedByName: next === 'DONE' ? '1일 공유(익명)' : '' })
+                                : l);
+                            if (res && res.data) { snap.work.progressPercent = res.data.progressPercent; snap.work.progressLabel = res.data.progressLabel; }
+                            pass.workSnapshot = JSON.stringify(snap);
+                        }
+                        renderDayPassViewer(viewer, pass);  // 진행률·배지·색상 갱신
+                    } catch (e) {
+                        cb.checked = !cb.checked;  // 실패 → 체크 롤백
+                        cb.disabled = false;
+                        if (label) label.textContent = prevLabel;
+                        alert(t('toggleFail') + ': ' + (e && e.message ? e.message : e));
+                    }
+                });
+            });
+        }
+
+        // 스냅샷 농지를 farmwork_map.html(OpenLayers+VWorld) iframe 으로 렌더 (읽기 전용).
+        // 좌표/폴리곤이 하나도 없으면 지도 영역 숨김 유지.
+        function mountDayPassMap(farmLands) {
+            try {
+                const lands = (farmLands || []).filter(l =>
+                    (l.centerLat != null && l.centerLng != null) || (l.polygonGeoJson && ('' + l.polygonGeoJson).length));
+                if (!lands.length) return;
+                const wrap = document.getElementById('dp-map-wrap');
+                const iframe = document.getElementById('dp-map');
+                if (!wrap || !iframe) return;
+                // VWorld 웹 키 — sangwolnongsan.com 도메인 등록(공개·도메인잠금), 상단 VWORLD_API_KEY 와 동일.
+                const VWORLD_KEY = "CC47B634-455D-3774-9128-0F3F958995A4";
+                // farmwork_map.html 은 load 시 sessionStorage['farmwork_map_data'] 를 자동 소비 → src 지정 전에 먼저 기록.
+                sessionStorage.setItem('farmwork_map_data', JSON.stringify({ apiKey: VWORLD_KEY, lands: lands, focusZoom: 15 }));
+                wrap.style.display = 'block';
+                iframe.src = 'map/farmwork_map.html';
+            } catch (e) { console.warn('[DayPassViewer] map mount 실패', e); }
         }
 
         function escapeHtml(s) {
