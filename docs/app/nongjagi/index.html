@@ -1104,9 +1104,12 @@
     ============================================================ -->
     <div id="daypass-viewer" style="display:none; min-height:100vh; background:#FAF9F4; color:#1F2421; font-family: -apple-system, system-ui, sans-serif; padding: 16px;"></div>
     <script type="module">
-        import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+        import { getAuth, initializeAuth, inMemoryPersistence, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
         import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+        // 뷰어 전용 독립 Firebase 앱 (메인 wasm 앱과 인증/persistence 격리). 토글 함수 호출에도 재사용.
+        let dpViewerApp = null;
 
         // ─────────── 1일 공유 뷰어 다국어 (자동감지 + 선택기) ───────────
         // 한국 농업 외국인 노동자 대상: 한국어·영어·베트남어·태국어·크메르어·네팔어.
@@ -1155,35 +1158,34 @@
             viewer.innerHTML = '<div style="text-align:center; padding: 40px;">📨 ' + t('checking') + '</div>';
 
             try {
-                // Firebase app 가 이미 init 됐으면 재사용 (위쪽 main script 가 init)
-                const app = getApps().length ? getApps()[0] : initializeApp({
-                    // 위쪽 firebaseConfig 와 반드시 동일 (farm-machine-manager-prod).
-                    // 다른 프로젝트를 가리키면 dayPass doc 을 못 찾아 무조건 '유효하지 않은 링크' 가 된다.
+                // 뷰어 전용 독립 Firebase 앱 (farm-machine-manager-prod). 메인 wasm 앱의
+                // persistentLocalCache(multipleTabManager) 락·인증 상태와 격리 → 실기기 Chrome 에서
+                // 익명로그인 hang / stale 토큰 permission-denied 회피. Firestore 는 기본(메모리) 캐시.
+                const cfg = {
                     apiKey: "AIzaSyCiEdJwGRBIOdgvdIvlPjnWcZSURiXS1Iw",
                     authDomain: "farm-machine-manager-prod.firebaseapp.com",
                     projectId: "farm-machine-manager-prod",
                     storageBucket: "farm-machine-manager-prod.firebasestorage.app",
                     messagingSenderId: "810632460995",
                     appId: "1:810632460995:web:69aaadbc9dc11a7cf74076"
-                });
-                const auth = getAuth(app);
-                const db = getFirestore(app);
+                };
+                let auth;
+                try { dpViewerApp = getApp('dpviewer'); auth = getAuth(dpViewerApp); }
+                catch (e) { dpViewerApp = initializeApp(cfg, 'dpviewer'); auth = initializeAuth(dpViewerApp, { persistence: inMemoryPersistence }); }
+                const db = getFirestore(dpViewerApp);
 
-                // 이미 로그인된 사용자면 그 그대로, 없으면 익명 sign-in
-                await new Promise((resolve) => {
-                    const unsub = onAuthStateChanged(auth, async (u) => {
-                        unsub();
-                        if (!u) {
-                            try {
-                                await signInAnonymously(auth);
-                            } catch (e) {
-                                viewer.innerHTML = dpMsg('❌ ' + t('anonFail') + ': ' + e.message);
-                                return;
-                            }
-                        }
-                        resolve();
-                    });
-                });
+                // 인메모리 인증 → 영속 세션 없음. 항상 새 익명 로그인(hang 방지 15s 타임아웃).
+                if (!auth.currentUser) {
+                    try {
+                        await Promise.race([
+                            signInAnonymously(auth),
+                            new Promise((_, rej) => setTimeout(() => rej(new Error('시간 초과')), 15000)),
+                        ]);
+                    } catch (e) {
+                        viewer.innerHTML = dpMsg('❌ ' + t('anonFail') + ': ' + (e && e.message || e));
+                        return;
+                    }
+                }
 
                 // dayPass doc 검색 — farms collection 의 어느 농장 코드에 있는지 모름.
                 // collectionGroup query 가 안 되니, 토큰 URL 에 farmCode 도 같이 인코딩 안 했으므로
@@ -1374,9 +1376,8 @@
                     cb.disabled = true;
                     if (label) label.textContent = t('processing');
                     try {
-                        const app = getApps()[0];
                         const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js");
-                        const call = httpsCallable(getFunctions(app, "asia-northeast3"), "updateDayPassWork");
+                        const call = httpsCallable(getFunctions(dpViewerApp, "asia-northeast3"), "updateDayPassWork");
                         const res = await call({ token: pass.token, farmCode: pass.farmCode, workId: pass.workId, farmlandId: landId, status: next });
                         const snap = JSON.parse(pass.workSnapshot || '{}');
                         if (snap.work && Array.isArray(snap.work.lands)) {
