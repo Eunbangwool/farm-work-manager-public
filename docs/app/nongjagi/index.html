@@ -1300,8 +1300,8 @@
                     : (land.nickname || '');
                 if (!qRaw) return '';
                 const q = encodeURIComponent(qRaw);
-                const btn = (href, label, bg, fg) => `<a href="${href}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none; padding:11px; border-radius:8px; font-size:14px; font-weight:700; color:${fg}; background:${bg};">🧭 ${label}</a>`;
-                return `<div style="display:flex; gap:8px; margin-top:10px;">`
+                const btn = (href, label, bg, fg) => `<a href="${href}" target="_blank" rel="noopener" style="text-decoration:none; padding:4px 9px; border-radius:6px; font-size:11px; font-weight:600; color:${fg}; background:${bg};">🧭 ${label}</a>`;
+                return `<div style="display:flex; gap:6px; margin-top:6px; justify-content:flex-end;">`
                     + btn('https://map.naver.com/p/search/' + q, navBrand.n, '#03C75A', '#fff')
                     + btn('https://map.kakao.com/link/search/' + q, navBrand.k, '#FEE500', '#3C1E1E')
                     + `</div>`;
@@ -1338,8 +1338,8 @@
                         ${biz ? '🧑‍🌾 ' + escapeHtml(biz) + ' · ' : ''}${crop ? '🌾 ' + escapeHtml(crop) : ''}${completedInfo ? ' · ' + escapeHtml(completedInfo) : ''}
                     </div>
                     ${wl.memo ? `<div style="font-size:12px; color:#1F2421; margin-top:6px; padding:6px; background:#FAF9F4; border-radius:4px;">📝 ${escapeHtml(wl.memo)}</div>` : ''}
-                    ${navButtons(land)}
                     ${toggle}
+                    ${navButtons(land)}
                 </div>`;
             }).join('');
 
@@ -1454,7 +1454,7 @@
                 // VWorld 웹 키 — sangwolnongsan.com 도메인 등록(공개·도메인잠금), 상단 VWORLD_API_KEY 와 동일.
                 const VWORLD_KEY = "CC47B634-455D-3774-9128-0F3F958995A4";
                 // farmwork_map.html 은 load 시 sessionStorage['farmwork_map_data'] 를 자동 소비 → src 지정 전에 먼저 기록.
-                sessionStorage.setItem('farmwork_map_data', JSON.stringify({ apiKey: VWORLD_KEY, lands: lands, focusZoom: 15 }));
+                sessionStorage.setItem('farmwork_map_data', JSON.stringify({ apiKey: VWORLD_KEY, lands: lands, focusZoom: 15, viewerMode: true }));
                 wrap.style.display = 'block';
                 iframe.src = 'map/farmwork_map.html';
             } catch (e) { console.warn('[DayPassViewer] map mount 실패', e); }
