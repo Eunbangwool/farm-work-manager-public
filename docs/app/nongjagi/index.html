@@ -1293,7 +1293,8 @@
             const landsHtml = (work.lands || []).map((wl) => {
                 const land = landById[wl.farmlandId] || {};
                 const nick = land.nickname || t('noNickname');
-                const addrEn = land.address ? romanizeKorean(land.address) : '';  // 주소는 항상 영어(로마자)
+                // 주소: 한국어 UI → 원문 한글, 그 외 언어 → 영어(로마자)
+                const addrDisp = land.address ? (dpLang === 'ko' ? land.address : romanizeKorean(land.address)) : '';
                 const biz = land.businessName || '';
                 const crop = land.cropName || '';
                 const isDone = wl.status === 'DONE';
@@ -1314,7 +1315,7 @@
                         <div style="font-weight:600; font-size:15px; flex:1;">📍 ${escapeHtml(nick)}</div>
                         ${statusBadge(wl.status)}
                     </div>
-                    ${addrEn ? `<div style="font-size:12px; color:#6B7068; margin-top:4px;">${escapeHtml(addrEn)}</div>` : ''}
+                    ${addrDisp ? `<div style="font-size:12px; color:#6B7068; margin-top:4px;">${escapeHtml(addrDisp)}</div>` : ''}
                     <div style="font-size:11px; color:#6B7068; margin-top:4px;">
                         ${biz ? '🧑‍🌾 ' + escapeHtml(biz) + ' · ' : ''}${crop ? '🌾 ' + escapeHtml(crop) : ''}${completedInfo ? ' · ' + escapeHtml(completedInfo) : ''}
                     </div>
