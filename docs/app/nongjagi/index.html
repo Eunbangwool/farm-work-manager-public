@@ -1501,7 +1501,8 @@
                 // farmwork_map.html 은 load 시 sessionStorage['farmwork_map_data'] 를 자동 소비 → src 지정 전에 먼저 기록.
                 sessionStorage.setItem('farmwork_map_data', JSON.stringify({ apiKey: VWORLD_KEY, lands: lands, focusZoom: 15, viewerMode: true }));
                 wrap.style.display = 'block';
-                iframe.src = 'map/farmwork_map.html';
+                // 캐시버스트 — 지도 파일 변경 시 이 버전을 올려야 브라우저가 새 지도를 받음.
+                iframe.src = 'map/farmwork_map.html?v=3';
             } catch (e) { console.warn('[DayPassViewer] map mount 실패', e); }
         }
 
