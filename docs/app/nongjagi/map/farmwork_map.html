@@ -52,6 +52,7 @@ console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
 
 (function(){
   let map, vectorSource, vectorLayer;
+  let ndviLayer = null; // 생육 식생지수 색상 오버레이 (P3)
   let pinSource, pinLayer;
   let userLocSource, userLocLayer;
   let liveLocSource, liveLocLayer;  // 멤버 라이브 위치 마커 (지연 생성)
@@ -59,6 +60,7 @@ console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
   // 매칭용 추가 농지 (표시 X) — 작업 지도에서 작업 외 등록 농지가 미매칭으로 표시되지 않게.
   let registeredLandsRef = [];
   let apiKeyRef = "";
+  let viewerModeRef = false;  // 1일 공유 뷰어 임베드: 롱프레스 팝업에서 등록/작업추가 버튼 숨김(나브만).
   // 사용자가 직접 pan/zoom 했는지 추적. true 면 데이터 재로딩 시 카메라 자동 fit 안 함.
   let userInteracted = false;
   // 라벨 표시 필터 — { nickname, address, businessName } 모두 boolean.
@@ -113,10 +115,31 @@ console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
         console.warn("[Farmwork] recenter failed: " + e.message);
       }
     },
+    // ===== 생육 식생지수(NDVI) 색상 오버레이 (P3, Android farmwork_map.html 과 동일) =====
+    showNdviOverlay: function(imageUrl, west, south, east, north){
+      try {
+        if (!map || !window.ol) return;
+        var ext = ol.proj.transformExtent([west, south, east, north], 'EPSG:4326', 'EPSG:3857');
+        if (ndviLayer) { map.removeLayer(ndviLayer); ndviLayer = null; }
+        ndviLayer = new ol.layer.Image({
+          zIndex: 80,
+          opacity: 0.75,
+          source: new ol.source.ImageStatic({ url: imageUrl, imageExtent: ext, projection: 'EPSG:3857' })
+        });
+        map.addLayer(ndviLayer);
+        console.log("[Farmwork] ndvi overlay shown");
+      } catch (e) { console.warn("[Farmwork] showNdviOverlay failed: " + e.message); }
+    },
+    hideNdviOverlay: function(){
+      try { if (map && ndviLayer) { map.removeLayer(ndviLayer); ndviLayer = null; } } catch (e) {}
+    },
     init: function(opts){
       console.log("[Farmwork] init called, lands=" + (opts.lands||[]).length + " registered=" + (opts.registeredLands||[]).length + " apiKey=" + (opts.apiKey ? opts.apiKey.length+"chars" : "EMPTY") + " curLoc=" + (opts.currentLat != null ? opts.currentLat.toFixed(4)+","+opts.currentLng.toFixed(4) : "none") + " mapExists=" + !!map);
       try {
         apiKeyRef = opts.apiKey || "";
+        viewerModeRef = !!opts.viewerMode;
+        // 1일 공유 뷰어: 지도 자체 '뒤로' 버튼 숨김(임베드라 불필요).
+        if (viewerModeRef) { var _bb = document.getElementById('back-btn'); if (_bb) _bb.style.display = 'none'; }
         landsRef = opts.lands || [];
         // 매칭용 추가 농지 — 작업 지도에서 작업 외 농지도 long-press 매칭에 포함 (PR-144 사용자 요청).
         // 표시(렌더링) 는 lands 만. registeredLands 는 findMatchingLand 에서만 사용.
@@ -737,16 +760,56 @@ console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
           '</button>';
       }
 
+      // 길안내: 좌표/면적 오른쪽에 카카오맵·T맵·네이버 아이콘(항상 주소로 검색).
+      // 주소 조회 실패 시 좌표로 대체. 농지 미등록 좌표에서도 노출. (Android 앱과 동일 UX)
+      const navDest = (safeAddr && safeAddr.trim() && safeAddr.indexOf('미확인') < 0 && safeAddr.indexOf('조회') < 0)
+        ? safeAddr : (lat.toFixed(6) + ',' + lon.toFixed(6));
+      const navBtn = function(prov, label, bg, fg) {
+        return '<button class="lp-nav-btn" data-prov="' + prov + '" ' +
+          'style="padding:5px 8px;background:' + bg + ';color:' + fg +
+          ';border:0;border-radius:6px;font:600 10px sans-serif;cursor:pointer;white-space:nowrap" ' +
+          'aria-label="' + label + ' 길안내">' + label + '</button>';
+      };
+
+      // 1일 공유 뷰어: 등록/작업추가 액션은 부모 앱 전용이라 숨김(나브 버튼만 남김).
+      if (viewerModeRef) actionsHtml = '';
+
       div.innerHTML =
         '<div style="font-size:12px"><b>📍 ' + safeAddr + '</b></div>' +
-        '<div style="color:#666;font-weight:500;font-size:10px;margin-top:2px">'
-          + lat.toFixed(5) + ', ' + lon.toFixed(5) +
+        '<div style="display:flex;align-items:flex-end;gap:8px;margin-top:2px">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="color:#666;font-weight:500;font-size:10px">'
+              + lat.toFixed(5) + ', ' + lon.toFixed(5) +
+            '</div>' +
+            '<div id="lp-area" style="color:#666;font-size:10px;margin-top:2px">평수 조회 중…</div>' +
+          '</div>' +
+          '<div id="lp-nav" style="display:flex;gap:5px;flex-shrink:0">' +
+            navBtn('kakao', '카카오맵', '#FEE500', '#3C1E1E') +
+            navBtn('tmap', 'T맵', '#0064FF', '#ffffff') +
+            navBtn('naver', '네이버', '#03C75A', '#ffffff') +
+          '</div>' +
         '</div>' +
-        '<div id="lp-area" style="color:#666;font-size:10px;margin-top:2px">평수 조회 중…</div>' +
         actionsHtml +
         '<div style="text-align:right;margin-top:4px">' +
         '<button id="lp-close-btn" style="background:transparent;border:0;color:#888;font-size:11px;cursor:pointer;padding:2px 4px">닫기</button>' +
         '</div>';
+
+      // 길안내 아이콘 핸들러 — Android WebView 면 브릿지, 웹이면 지도 URL 새 탭.
+      div.querySelectorAll('.lp-nav-btn').forEach(function(b) {
+        b.onclick = function(e) {
+          e.stopPropagation();
+          const prov = b.getAttribute('data-prov');
+          if (window.Android && window.Android.openMapApp) {
+            window.Android.openMapApp(prov, navDest);
+            return;
+          }
+          const q = encodeURIComponent(navDest);
+          const url = prov === 'kakao' ? 'https://map.kakao.com/link/search/' + q
+                    : prov === 'naver' ? 'https://map.naver.com/p/search/' + q
+                    : 'tmap://search?name=' + q;  // T맵은 웹 검색 URL 부재 → 앱 스킴(모바일)
+          window.open(url, '_blank');
+        };
+      });
 
       // 평수(면적). 매칭된 농지의 DB 면적이 있으면 즉시 사용 (VWorld 호출 없이) —
       // VWorld 일시 실패해도 "평수 정보 없음" 안 뜨고 사용자 등록 값 유지.

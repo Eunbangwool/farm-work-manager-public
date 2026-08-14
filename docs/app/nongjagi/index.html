@@ -1110,6 +1110,54 @@
 
         // 뷰어 전용 독립 Firebase 앱 (메인 wasm 앱과 인증/persistence 격리). 토글 함수 호출에도 재사용.
         let dpViewerApp = null;
+        let dpCurrentPass = null, dpCurrentViewer = null;  // 지도 탭 콜백(onMapLandClick)이 참조.
+
+        // 공유 완료 토글: updateDayPassWork 호출 + 로컬 스냅샷 갱신. 체크박스·지도 팝업 공용.
+        async function dpToggleWork(pass, landId, next) {
+            const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js");
+            const call = httpsCallable(getFunctions(dpViewerApp, "asia-northeast3"), "updateDayPassWork");
+            const res = await call({ token: pass.token, farmCode: pass.farmCode, workId: pass.workId, farmlandId: landId, status: next });
+            const snap = JSON.parse(pass.workSnapshot || '{}');
+            if (snap.work && Array.isArray(snap.work.lands)) {
+                const todayIso = new Date().toISOString().slice(0, 10);
+                snap.work.lands = snap.work.lands.map((l) => (l && l.farmlandId === landId)
+                    ? Object.assign({}, l, { status: next, completedDate: next === 'DONE' ? todayIso : '', completedByName: next === 'DONE' ? '1일 공유(익명)' : '' })
+                    : l);
+                if (res && res.data) { snap.work.progressPercent = res.data.progressPercent; snap.work.progressLabel = res.data.progressLabel; }
+                pass.workSnapshot = JSON.stringify(snap);
+            }
+        }
+
+        // 지도에서 농지 탭 → 완료/미완료 토글 바텀시트. farmwork_map.html 이 window.farmwork.onMapLandClick 호출.
+        function dpShowLandToggle(landId) {
+            const pass = dpCurrentPass, viewer = dpCurrentViewer;
+            if (!pass) return;
+            let snap; try { snap = JSON.parse(pass.workSnapshot || '{}'); } catch (e) { return; }
+            const wl = ((snap.work && snap.work.lands) || []).find((l) => l && l.farmlandId === landId);
+            if (!wl || wl.status === 'EXCLUDED') return;  // 이 작업 농지가 아니거나 제외
+            const fl = ((snap.farmLands) || []).find((l) => l && l.id === landId) || {};
+            const isDone = wl.status === 'DONE';
+            const nick = fl.nickname || t('noNickname');
+            const addr = fl.address ? (dpLang === 'ko' ? fl.address : romanizeKorean(fl.address)) : '';
+            let sheet = document.getElementById('dp-land-sheet');
+            if (!sheet) { sheet = document.createElement('div'); sheet.id = 'dp-land-sheet'; document.body.appendChild(sheet); }
+            sheet.style.cssText = 'position:fixed; left:50%; bottom:16px; transform:translateX(-50%); width:min(420px,calc(100vw - 24px)); background:#fff; border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,0.3); z-index:2000; padding:16px;';
+            sheet.innerHTML =
+                '<div style="font-weight:700; font-size:16px;">📍 ' + escapeHtml(nick) + '</div>'
+                + (addr ? '<div style="font-size:12px; color:#6B7068; margin-top:2px;">' + escapeHtml(addr) + '</div>' : '')
+                + '<button id="dp-sheet-toggle" style="margin-top:12px; width:100%; padding:12px; border:0; border-radius:8px; font-size:15px; font-weight:700; color:#fff; cursor:pointer; background:' + (isDone ? '#9A9A95' : '#2F5D3D') + ';">' + (isDone ? '↩ ' + t('incomplete') : '✓ ' + t('done')) + '</button>'
+                + '<button id="dp-sheet-close" style="margin-top:8px; width:100%; padding:8px; border:0; background:transparent; color:#888; font-size:13px; cursor:pointer;">✕</button>';
+            sheet.style.display = 'block';
+            document.getElementById('dp-sheet-close').onclick = () => { sheet.style.display = 'none'; };
+            document.getElementById('dp-sheet-toggle').onclick = async () => {
+                const b = document.getElementById('dp-sheet-toggle');
+                b.disabled = true; b.textContent = t('processing');
+                try { await dpToggleWork(pass, landId, isDone ? 'PENDING' : 'DONE'); sheet.style.display = 'none'; renderDayPassViewer(viewer, pass); }
+                catch (e) { b.disabled = false; alert(t('toggleFail') + ': ' + (e && e.message || e)); }
+            };
+        }
+        window.farmwork = window.farmwork || {};
+        window.farmwork.onMapLandClick = dpShowLandToggle;
 
         // ─────────── 1일 공유 뷰어 다국어 (자동감지 + 선택기) ───────────
         // 한국 농업 외국인 노동자 대상: 한국어·영어·베트남어·태국어·크메르어·네팔어.
@@ -1278,6 +1326,9 @@
             const farmLands = snapshot.farmLands || [];
             const landById = {};
             farmLands.forEach((l) => { landById[l.id] = l; });
+            const statusById = {};
+            (work.lands || []).forEach((wl) => { if (wl) statusById[wl.farmlandId] = wl.status; });
+            dpCurrentPass = pass; dpCurrentViewer = viewer;  // 지도 탭 콜백(onMapLandClick)이 참조
 
             const remainMs = (pass.expiresAt || 0) - Date.now();
             const remainHr = Math.max(0, Math.floor(remainMs / 3600000));
@@ -1395,7 +1446,7 @@
                     tbtn.disabled = false; tbtn.textContent = orig;
                 }
             });
-            mountDayPassMap(farmLands);
+            mountDayPassMap(farmLands, statusById);
             attachDayPassToggles(viewer, pass);
         }
 
@@ -1412,19 +1463,8 @@
                     cb.disabled = true;
                     if (label) label.textContent = t('processing');
                     try {
-                        const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js");
-                        const call = httpsCallable(getFunctions(dpViewerApp, "asia-northeast3"), "updateDayPassWork");
-                        const res = await call({ token: pass.token, farmCode: pass.farmCode, workId: pass.workId, farmlandId: landId, status: next });
-                        const snap = JSON.parse(pass.workSnapshot || '{}');
-                        if (snap.work && Array.isArray(snap.work.lands)) {
-                            const todayIso = new Date().toISOString().slice(0, 10);
-                            snap.work.lands = snap.work.lands.map((l) => (l && l.farmlandId === landId)
-                                ? Object.assign({}, l, { status: next, completedDate: next === 'DONE' ? todayIso : '', completedByName: next === 'DONE' ? '1일 공유(익명)' : '' })
-                                : l);
-                            if (res && res.data) { snap.work.progressPercent = res.data.progressPercent; snap.work.progressLabel = res.data.progressLabel; }
-                            pass.workSnapshot = JSON.stringify(snap);
-                        }
-                        renderDayPassViewer(viewer, pass);  // 진행률·배지·색상 갱신
+                        await dpToggleWork(pass, landId, next);
+                        renderDayPassViewer(viewer, pass);  // 진행률·배지·색상·지도 갱신
                     } catch (e) {
                         cb.checked = !cb.checked;  // 실패 → 체크 롤백
                         cb.disabled = false;
@@ -1437,16 +1477,21 @@
 
         // 스냅샷 농지를 farmwork_map.html(OpenLayers+VWorld) iframe 으로 렌더 (읽기 전용).
         // 좌표/폴리곤이 하나도 없으면 지도 영역 숨김 유지.
-        function mountDayPassMap(farmLands) {
+        function mountDayPassMap(farmLands, statusById) {
             try {
                 const romanize = dpLang !== 'ko';  // 비한국어 → 지도 라벨(주소·별명·업자명)도 영어(로마자)
                 const lands = (farmLands || [])
                     .filter(l => (l.centerLat != null && l.centerLng != null) || (l.polygonGeoJson && ('' + l.polygonGeoJson).length))
-                    .map(l => romanize ? Object.assign({}, l, {
-                        address: romanizeKorean(l.address),
-                        nickname: romanizeKorean(l.nickname),
-                        businessName: romanizeKorean(l.businessName),
-                    }) : l);
+                    .map(l => {
+                        const base = romanize ? Object.assign({}, l, {
+                            address: romanizeKorean(l.address),
+                            nickname: romanizeKorean(l.nickname),
+                            businessName: romanizeKorean(l.businessName),
+                        }) : Object.assign({}, l);
+                        // 작업 상태를 지도에 전달 → 완료(DONE) 폴리곤 파랑, 미완료 빨강. (없으면 전부 빨강 폴백)
+                        base.status = (statusById && statusById[l.id]) || 'PENDING';
+                        return base;
+                    });
                 if (!lands.length) return;
                 const wrap = document.getElementById('dp-map-wrap');
                 const iframe = document.getElementById('dp-map');
