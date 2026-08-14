@@ -1124,6 +1124,15 @@
             ne: { checking:"साझेदारी लिङ्क जाँच गर्दै…", invalidLink:"अमान्य लिङ्क — यो साझेदारी रद्द गरिएको वा अवस्थित छैन।", expiredLink:"लिङ्कको म्याद सकियो वा रद्द गरियो — कृपया नयाँ लिङ्क माग्नुहोस्।", expired24:"लिङ्कको म्याद सकियो — २४ घण्टाभन्दा बढी भयो। कृपया नयाँ लिङ्क माग्नुहोस्।", anonFail:"बेनामी साइन-इन असफल", parseFail:"डेटा लोड गर्न सकिएन", error:"त्रुटि", shareTitle:"१ दिने साझेदारी", remaining:"{h} घण्टा {m} मिनेट बाँकी", sharedBy:"{name} द्वारा साझा", progressDone:"{label} सम्पन्न", farmlands:"{n} खेत", mapTitle:"खेतको स्थान", noLands:"खेत छैन", noNickname:"(नाम छैन)", done:"सम्पन्न", incomplete:"बाँकी", excluded:"बहिष्कृत", completedBy:"सम्पन्न {date} ({name})", completedNoName:"सम्पन्न {date}", footer:"१ दिने साझेदारी लिङ्क — तपाईं सम्पन्न / बाँकी चिन्ह लगाउन सक्नुहुन्छ। २४ घण्टापछि स्वतः म्याद सकिन्छ।", processing:"प्रशोधन गर्दै…", toggleFail:"स्थिति परिवर्तन गर्न सकिएन", langLabel:"भाषा", workNameFallback:"(नाम छैन)" },
         };
         const DP_LANG_NAMES = { ko:"한국어", en:"English", vi:"Tiếng Việt", th:"ไทย", km:"ខ្មែរ", ne:"नेपाली" };
+        const DP_TR_LABEL = { ko:"번역", en:"Translate", vi:"Dịch", th:"แปล", km:"បកប្រែ", ne:"अनुवाद" };
+        // 작업명 등 자유 텍스트(사전 번역 불가)를 선택 언어로 번역 — 무료 구글 endpoint(키 불필요).
+        async function dpTranslate(text, tl) {
+            const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=' + encodeURIComponent(tl) + '&dt=t&q=' + encodeURIComponent(text);
+            const r = await fetch(url);
+            if (!r.ok) throw new Error('http ' + r.status);
+            const j = await r.json();
+            return (j[0] || []).map((s) => s[0]).join('');
+        }
         function dpDetectLang() {
             try { const s = localStorage.getItem('dp_lang'); if (s && DP_I18N[s]) return s; } catch (e) {}
             const cands = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'ko'];
@@ -1345,7 +1354,11 @@
                             <div style="font-size:12px; opacity:0.85; flex:1;">📨 ${t('shareTitle')} · ${t('remaining', { h: remainHr, m: remainMin })}</div>
                             ${langSel}
                         </div>
-                        <div style="font-size:20px; font-weight:700; margin-top:6px;">${escapeHtml(work.name || t('workNameFallback'))}</div>
+                        <div style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span style="font-size:20px; font-weight:700;">${escapeHtml(work.name || t('workNameFallback'))}</span>
+                            ${dpLang !== 'ko' ? `<button id="dp-translate-btn" style="font-size:12px; font-weight:700; padding:5px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.5); background:rgba(255,255,255,0.18); color:#fff; cursor:pointer; flex:none;">🌐 ${DP_TR_LABEL[dpLang] || 'Translate'}</button>` : ''}
+                        </div>
+                        <div id="dp-translate-out" style="font-size:14px; color:#fff; margin-top:4px;"></div>
                         <div style="font-size:13px; opacity:0.9; margin-top:2px;">${escapeHtml(work.workType || '')}${work.progressLabel ? ' · ' + t('progressDone', { label: escapeHtml(work.progressLabel) }) : ''}</div>
                         ${pass.createdByName ? `<div style="font-size:11px; opacity:0.75; margin-top:8px;">${t('sharedBy', { name: escapeHtml(pass.createdByName) })}</div>` : ''}
                     </div>
@@ -1365,6 +1378,22 @@
                 dpLang = e.target.value;
                 try { localStorage.setItem('dp_lang', dpLang); } catch (x) {}
                 renderDayPassViewer(viewer, pass);
+            });
+            const tbtn = document.getElementById('dp-translate-btn');
+            if (tbtn) tbtn.addEventListener('click', async () => {
+                const out = document.getElementById('dp-translate-out');
+                const src = [work.name, work.workType].filter(Boolean).join(' · ');
+                if (!src) return;
+                tbtn.disabled = true; const orig = tbtn.textContent; tbtn.textContent = '⏳';
+                try {
+                    const tr = await dpTranslate(src, dpLang);
+                    if (out) out.textContent = '🌐 ' + tr;
+                    tbtn.style.display = 'none';
+                } catch (e) {
+                    // 폴백: 구글 번역 새 탭
+                    window.open('https://translate.google.com/?sl=ko&tl=' + encodeURIComponent(dpLang) + '&text=' + encodeURIComponent(src) + '&op=translate', '_blank');
+                    tbtn.disabled = false; tbtn.textContent = orig;
+                }
             });
             mountDayPassMap(farmLands);
             attachDayPassToggles(viewer, pass);
@@ -1410,8 +1439,14 @@
         // 좌표/폴리곤이 하나도 없으면 지도 영역 숨김 유지.
         function mountDayPassMap(farmLands) {
             try {
-                const lands = (farmLands || []).filter(l =>
-                    (l.centerLat != null && l.centerLng != null) || (l.polygonGeoJson && ('' + l.polygonGeoJson).length));
+                const romanize = dpLang !== 'ko';  // 비한국어 → 지도 라벨(주소·별명·업자명)도 영어(로마자)
+                const lands = (farmLands || [])
+                    .filter(l => (l.centerLat != null && l.centerLng != null) || (l.polygonGeoJson && ('' + l.polygonGeoJson).length))
+                    .map(l => romanize ? Object.assign({}, l, {
+                        address: romanizeKorean(l.address),
+                        nickname: romanizeKorean(l.nickname),
+                        businessName: romanizeKorean(l.businessName),
+                    }) : l);
                 if (!lands.length) return;
                 const wrap = document.getElementById('dp-map-wrap');
                 const iframe = document.getElementById('dp-map');
