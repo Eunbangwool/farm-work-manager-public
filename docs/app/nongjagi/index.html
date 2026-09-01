@@ -1113,18 +1113,46 @@
         let dpCurrentPass = null, dpCurrentViewer = null;  // 지도 탭 콜백(onMapLandClick)이 참조.
 
         // 공유 완료 토글: updateDayPassWork 호출 + 로컬 스냅샷 갱신. 체크박스·지도 팝업 공용.
+        // 실제 work 의 현재 land 상태를 getDayPassWork 로 받아 스냅샷에 병합 → 뷰어가 "현재" 상태 표시.
+        // (발급시점 고정 스냅샷 staleness 해결: 앱/다른 링크로 바뀐 상태도 반영.) 성공 true.
+        async function dpApplyLiveStatus(pass) {
+            try {
+                const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js");
+                const call = httpsCallable(getFunctions(dpViewerApp, "asia-northeast3"), "getDayPassWork");
+                const res = await call({ token: pass.token, farmCode: pass.farmCode, workId: pass.workId });
+                const live = res && res.data;
+                if (!live || !Array.isArray(live.lands)) return false;
+                const snap = JSON.parse(pass.workSnapshot || '{}');
+                if (!(snap.work && Array.isArray(snap.work.lands))) return false;
+                const byId = {};
+                live.lands.forEach((l) => { if (l && l.farmlandId) byId[l.farmlandId] = l; });
+                snap.work.lands = snap.work.lands.map((l) => {
+                    const lv = l && byId[l.farmlandId];
+                    return lv ? Object.assign({}, l, { status: lv.status, completedDate: lv.completedDate, completedByName: lv.completedByName }) : l;
+                });
+                if (live.progressPercent != null) snap.work.progressPercent = live.progressPercent;
+                if (live.progressLabel != null) snap.work.progressLabel = live.progressLabel;
+                pass.workSnapshot = JSON.stringify(snap);
+                return true;
+            } catch (e) { console.warn('[DayPassViewer] live status 실패(스냅샷 폴백)', e && e.message); return false; }
+        }
+
         async function dpToggleWork(pass, landId, next) {
             const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js");
             const call = httpsCallable(getFunctions(dpViewerApp, "asia-northeast3"), "updateDayPassWork");
             const res = await call({ token: pass.token, farmCode: pass.farmCode, workId: pass.workId, farmlandId: landId, status: next });
-            const snap = JSON.parse(pass.workSnapshot || '{}');
-            if (snap.work && Array.isArray(snap.work.lands)) {
-                const todayIso = new Date().toISOString().slice(0, 10);
-                snap.work.lands = snap.work.lands.map((l) => (l && l.farmlandId === landId)
-                    ? Object.assign({}, l, { status: next, completedDate: next === 'DONE' ? todayIso : '', completedByName: next === 'DONE' ? '1일 공유(익명)' : '' })
-                    : l);
-                if (res && res.data) { snap.work.progressPercent = res.data.progressPercent; snap.work.progressLabel = res.data.progressLabel; }
-                pass.workSnapshot = JSON.stringify(snap);
+            // 권위 있는 라이브 상태로 갱신(동시 변경 반영). 실패 시 낙관적 패치.
+            const ok = await dpApplyLiveStatus(pass);
+            if (!ok) {
+                const snap = JSON.parse(pass.workSnapshot || '{}');
+                if (snap.work && Array.isArray(snap.work.lands)) {
+                    const todayIso = new Date().toISOString().slice(0, 10);
+                    snap.work.lands = snap.work.lands.map((l) => (l && l.farmlandId === landId)
+                        ? Object.assign({}, l, { status: next, completedDate: next === 'DONE' ? todayIso : '', completedByName: next === 'DONE' ? '1일 공유(익명)' : '' })
+                        : l);
+                    if (res && res.data) { snap.work.progressPercent = res.data.progressPercent; snap.work.progressLabel = res.data.progressLabel; }
+                    pass.workSnapshot = JSON.stringify(snap);
+                }
             }
         }
 
@@ -1288,6 +1316,8 @@
                     viewer.innerHTML = dpMsg('⏰ ' + t('expired24'));
                     return;
                 }
+                // 발급시점 고정본 대신 현재 작업 상태로 갱신(함수 미배포·실패 시 스냅샷 폴백).
+                await dpApplyLiveStatus(pass);
                 renderDayPassViewer(viewer, pass);
             } catch (e) {
                 // 단일 doc get 이 만료/취소로 룰에 막히면 permission-denied → 만료 안내로 표시.
