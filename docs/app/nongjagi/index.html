@@ -538,14 +538,18 @@
          * sessionStorage 에 데이터 저장 후 /map/farmwork_map.html 로 이동.
          * 사용자는 닫기 버튼 또는 브라우저 뒤로가기로 앱 복귀.
          */
-        function openFarmMap(landsJson, focusLandId) {
+        // 앱 BuildConfig.JP_PARCEL_TILES_BASE 웹 등가물. 참고: docs/JP_PARCEL_CDN.md
+        const JP_PARCEL_TILES_BASE = "https://pub-c51273a0924d4b09a62326ad86a31f7e.r2.dev/jp";
+        function openFarmMap(landsJson, focusLandId, country) {
             try {
                 const lands = JSON.parse(landsJson || '[]');
                 const data = {
                     apiKey: VWORLD_API_KEY,
                     lands: lands,
                     focusId: focusLandId || null,
-                    focusZoom: 17
+                    focusZoom: 17,
+                    jpParcelTilesBase: JP_PARCEL_TILES_BASE,
+                    country: country || undefined,
                 };
                 sessionStorage.setItem('farmwork_map_data', JSON.stringify(data));
                 window.location.href = 'map/farmwork_map.html';
@@ -586,7 +590,7 @@
             }
             return embeddedMapIframe;
         }
-        function embedFarmMap(landsJson, focusLandId, topPx, bottomPx, labelNick, labelAddr, labelBiz, registeredLandsJson) {
+        function embedFarmMap(landsJson, focusLandId, topPx, bottomPx, labelNick, labelAddr, labelBiz, registeredLandsJson, country) {
             try {
                 const iframe = ensureMapIframe(topPx, bottomPx);
                 const data = {
@@ -594,6 +598,8 @@
                     lands: JSON.parse(landsJson || '[]'),
                     focusId: focusLandId || null,
                     focusZoom: 17,
+                    jpParcelTilesBase: JP_PARCEL_TILES_BASE,
+                    country: country || undefined,
                     labelFilter: {
                         nickname: !!labelNick,
                         address: !!labelAddr,
@@ -796,9 +802,35 @@
          * type=address&category=PARCEL 로 지번 주소 후보 받음.
          * 결과 JSON 배열을 콜백으로 (실패 시 '[]').
          */
-        async function searchAddress(query, cb) {
+        async function searchAddress(query, country, cb) {
             const q = (query || '').trim();
             if (!q) { cb('[]'); return; }
+            // JP: 国土地理院 住所検索API (무료·키 불필요·대표점 좌표). 筆폴리곤은 지도측 별도.
+            if (country === 'JP') {
+                try {
+                    const url = 'https://msearch.gsi.go.jp/address-search/AddressSearch?q=' +
+                        encodeURIComponent(q);
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    const candidates = (Array.isArray(data) ? data : [])
+                        .map(f => {
+                            const c = (f.geometry && f.geometry.coordinates) || [];
+                            return {
+                                fullAddress: (f.properties && f.properties.title) || '',
+                                zipcode: '',
+                                lng: parseFloat(c[0]),
+                                lat: parseFloat(c[1]),
+                            };
+                        })
+                        .filter(c => c.fullAddress && !isNaN(c.lat) && !isNaN(c.lng))
+                        .slice(0, 20);
+                    cb(JSON.stringify(candidates));
+                } catch (e) {
+                    console.warn('[searchAddress:JP] failed', e);
+                    cb('[]');
+                }
+                return;
+            }
             try {
                 const url = 'https://api.vworld.kr/req/search?service=search&request=search' +
                     '&version=2.0&size=20&page=1&type=address&category=PARCEL' +
@@ -1192,12 +1224,12 @@
         // UI 문구만 번역(주소·농지명 등 데이터는 한국어 고유명사라 원문 유지).
         // ⚠ km/ne 는 표준 용어 기반 — 원어민 검수 권장.
         const DP_I18N = {
-            ko: { checking:"1일 공유 링크 확인 중…", invalidLink:"유효하지 않은 링크 — 취소됐거나 존재하지 않는 공유입니다.", expiredLink:"만료되었거나 취소된 링크입니다 — 발급자에게 새 링크를 요청하세요.", expired24:"만료된 링크 — 24시간이 지났습니다. 발급자에게 새 링크를 요청하세요.", anonFail:"익명 로그인 실패", parseFail:"데이터 파싱 실패", error:"오류", shareTitle:"1일 공유 보기", remaining:"{h}시간 {m}분 남음", sharedBy:"{name} 님이 공유", progressDone:"{label} 완료", farmlands:"농지 {n}개", mapTitle:"농지 위치", noLands:"농지 없음", noNickname:"(별명 없음)", done:"완료", incomplete:"미완료", excluded:"제외", completedBy:"{date} 완료 ({name})", completedNoName:"{date} 완료", footer:"1일 공유 링크 — 완료/미완료를 표시할 수 있습니다. 24시간 후 자동 만료됩니다.", processing:"처리 중…", toggleFail:"상태 변경 실패", langLabel:"언어", workNameFallback:"(작업명 없음)" },
-            en: { checking:"Checking share link…", invalidLink:"Invalid link — this share was canceled or does not exist.", expiredLink:"This link has expired or been canceled — please ask for a new link.", expired24:"Link expired — more than 24 hours have passed. Please ask for a new link.", anonFail:"Anonymous sign-in failed", parseFail:"Failed to load data", error:"Error", shareTitle:"1-Day Share", remaining:"{h}h {m}m left", sharedBy:"Shared by {name}", progressDone:"{label} done", farmlands:"{n} fields", mapTitle:"Field locations", noLands:"No fields", noNickname:"(no name)", done:"Done", incomplete:"Not done", excluded:"Excluded", completedBy:"completed {date} ({name})", completedNoName:"completed {date}", footer:"1-day share link — you can mark tasks done / not done. Expires automatically after 24 hours.", processing:"Processing…", toggleFail:"Failed to change status", langLabel:"Language", workNameFallback:"(no name)" },
-            vi: { checking:"Đang kiểm tra liên kết chia sẻ…", invalidLink:"Liên kết không hợp lệ — chia sẻ đã bị hủy hoặc không tồn tại.", expiredLink:"Liên kết đã hết hạn hoặc bị hủy — vui lòng yêu cầu liên kết mới.", expired24:"Liên kết đã hết hạn — đã quá 24 giờ. Vui lòng yêu cầu liên kết mới.", anonFail:"Đăng nhập ẩn danh thất bại", parseFail:"Không tải được dữ liệu", error:"Lỗi", shareTitle:"Chia sẻ 1 ngày", remaining:"Còn {h} giờ {m} phút", sharedBy:"Chia sẻ bởi {name}", progressDone:"{label} hoàn thành", farmlands:"{n} thửa ruộng", mapTitle:"Vị trí thửa ruộng", noLands:"Không có thửa ruộng", noNickname:"(không có tên)", done:"Hoàn thành", incomplete:"Chưa xong", excluded:"Loại trừ", completedBy:"hoàn thành {date} ({name})", completedNoName:"hoàn thành {date}", footer:"Liên kết chia sẻ 1 ngày — bạn có thể đánh dấu hoàn thành / chưa xong. Tự động hết hạn sau 24 giờ.", processing:"Đang xử lý…", toggleFail:"Không thể thay đổi trạng thái", langLabel:"Ngôn ngữ", workNameFallback:"(không có tên)" },
-            th: { checking:"กำลังตรวจสอบลิงก์แชร์…", invalidLink:"ลิงก์ไม่ถูกต้อง — การแชร์ถูกยกเลิกหรือไม่มีอยู่", expiredLink:"ลิงก์หมดอายุหรือถูกยกเลิก — กรุณาขอลิงก์ใหม่", expired24:"ลิงก์หมดอายุ — เกิน 24 ชั่วโมงแล้ว กรุณาขอลิงก์ใหม่", anonFail:"เข้าสู่ระบบแบบไม่ระบุตัวตนล้มเหลว", parseFail:"โหลดข้อมูลไม่สำเร็จ", error:"ข้อผิดพลาด", shareTitle:"แชร์ 1 วัน", remaining:"เหลือ {h} ชั่วโมง {m} นาที", sharedBy:"แชร์โดย {name}", progressDone:"{label} เสร็จ", farmlands:"{n} แปลง", mapTitle:"ตำแหน่งแปลงนา", noLands:"ไม่มีแปลง", noNickname:"(ไม่มีชื่อ)", done:"เสร็จแล้ว", incomplete:"ยังไม่เสร็จ", excluded:"ยกเว้น", completedBy:"เสร็จ {date} ({name})", completedNoName:"เสร็จ {date}", footer:"ลิงก์แชร์ 1 วัน — คุณสามารถทำเครื่องหมายเสร็จ / ยังไม่เสร็จ หมดอายุอัตโนมัติใน 24 ชั่วโมง", processing:"กำลังดำเนินการ…", toggleFail:"เปลี่ยนสถานะไม่สำเร็จ", langLabel:"ภาษา", workNameFallback:"(ไม่มีชื่อ)" },
-            km: { checking:"កំពុងពិនិត្យតំណចែករំលែក…", invalidLink:"តំណមិនត្រឹមត្រូវ — ការចែករំលែកត្រូវបានលុបចោល ឬមិនមាន។", expiredLink:"តំណផុតកំណត់ ឬត្រូវបានលុបចោល — សូមស្នើសុំតំណថ្មី។", expired24:"តំណផុតកំណត់ — លើសពី ២៤ ម៉ោង។ សូមស្នើសុំតំណថ្មី។", anonFail:"ការចូលអនាមិកបានបរាជ័យ", parseFail:"មិនអាចផ្ទុកទិន្នន័យ", error:"កំហុស", shareTitle:"ការចែករំលែក ១ ថ្ងៃ", remaining:"នៅសល់ {h} ម៉ោង {m} នាទី", sharedBy:"ចែករំលែកដោយ {name}", progressDone:"{label} រួចរាល់", farmlands:"ដីស្រែ {n}", mapTitle:"ទីតាំងដីស្រែ", noLands:"គ្មានដីស្រែ", noNickname:"(គ្មានឈ្មោះ)", done:"រួចរាល់", incomplete:"មិនទាន់រួច", excluded:"លើកលែង", completedBy:"រួចរាល់ {date} ({name})", completedNoName:"រួចរាល់ {date}", footer:"តំណចែករំលែក ១ ថ្ងៃ — អ្នកអាចសម្គាល់ថារួច / មិនទាន់រួច។ ផុតកំណត់ស្វ័យប្រវត្តិក្នុង ២៤ ម៉ោង។", processing:"កំពុងដំណើរការ…", toggleFail:"មិនអាចផ្លាស់ប្តូរស្ថានភាព", langLabel:"ភាសា", workNameFallback:"(គ្មានឈ្មោះ)" },
-            ne: { checking:"साझेदारी लिङ्क जाँच गर्दै…", invalidLink:"अमान्य लिङ्क — यो साझेदारी रद्द गरिएको वा अवस्थित छैन।", expiredLink:"लिङ्कको म्याद सकियो वा रद्द गरियो — कृपया नयाँ लिङ्क माग्नुहोस्।", expired24:"लिङ्कको म्याद सकियो — २४ घण्टाभन्दा बढी भयो। कृपया नयाँ लिङ्क माग्नुहोस्।", anonFail:"बेनामी साइन-इन असफल", parseFail:"डेटा लोड गर्न सकिएन", error:"त्रुटि", shareTitle:"१ दिने साझेदारी", remaining:"{h} घण्टा {m} मिनेट बाँकी", sharedBy:"{name} द्वारा साझा", progressDone:"{label} सम्पन्न", farmlands:"{n} खेत", mapTitle:"खेतको स्थान", noLands:"खेत छैन", noNickname:"(नाम छैन)", done:"सम्पन्न", incomplete:"बाँकी", excluded:"बहिष्कृत", completedBy:"सम्पन्न {date} ({name})", completedNoName:"सम्पन्न {date}", footer:"१ दिने साझेदारी लिङ्क — तपाईं सम्पन्न / बाँकी चिन्ह लगाउन सक्नुहुन्छ। २४ घण्टापछि स्वतः म्याद सकिन्छ।", processing:"प्रशोधन गर्दै…", toggleFail:"स्थिति परिवर्तन गर्न सकिएन", langLabel:"भाषा", workNameFallback:"(नाम छैन)" },
+            ko: { checking:"1일 공유 링크 확인 중…", invalidLink:"유효하지 않은 링크 — 취소됐거나 존재하지 않는 공유입니다.", expiredLink:"만료되었거나 취소된 링크입니다 — 발급자에게 새 링크를 요청하세요.", expired24:"만료된 링크 — 24시간이 지났습니다. 발급자에게 새 링크를 요청하세요.", anonFail:"익명 로그인 실패", parseFail:"데이터 파싱 실패", error:"오류", shareTitle:"1일 공유 보기", remaining:"{h}시간 {m}분 남음", sharedBy:"{name} 님이 공유", progressDone:"{label} 완료", farmlands:"농지 {n}개", mapTitle:"농지 위치", noLands:"농지 없음", noNickname:"(별명 없음)", done:"완료", incomplete:"미완료", excluded:"제외", completedBy:"{date} 완료 ({name})", completedNoName:"{date} 완료", footer:"1일 공유 링크 — 완료/미완료를 표시할 수 있습니다. 24시간 후 자동 만료됩니다.", processing:"처리 중…", toggleFail:"상태 변경 실패", langLabel:"언어", workNameFallback:"(작업명 없음)", viewAll:"전체보기", backToList:"목록으로" },
+            en: { checking:"Checking share link…", invalidLink:"Invalid link — this share was canceled or does not exist.", expiredLink:"This link has expired or been canceled — please ask for a new link.", expired24:"Link expired — more than 24 hours have passed. Please ask for a new link.", anonFail:"Anonymous sign-in failed", parseFail:"Failed to load data", error:"Error", shareTitle:"1-Day Share", remaining:"{h}h {m}m left", sharedBy:"Shared by {name}", progressDone:"{label} done", farmlands:"{n} fields", mapTitle:"Field locations", noLands:"No fields", noNickname:"(no name)", done:"Done", incomplete:"Not done", excluded:"Excluded", completedBy:"completed {date} ({name})", completedNoName:"completed {date}", footer:"1-day share link — you can mark tasks done / not done. Expires automatically after 24 hours.", processing:"Processing…", toggleFail:"Failed to change status", langLabel:"Language", workNameFallback:"(no name)", viewAll:"View all", backToList:"Back to list" },
+            vi: { checking:"Đang kiểm tra liên kết chia sẻ…", invalidLink:"Liên kết không hợp lệ — chia sẻ đã bị hủy hoặc không tồn tại.", expiredLink:"Liên kết đã hết hạn hoặc bị hủy — vui lòng yêu cầu liên kết mới.", expired24:"Liên kết đã hết hạn — đã quá 24 giờ. Vui lòng yêu cầu liên kết mới.", anonFail:"Đăng nhập ẩn danh thất bại", parseFail:"Không tải được dữ liệu", error:"Lỗi", shareTitle:"Chia sẻ 1 ngày", remaining:"Còn {h} giờ {m} phút", sharedBy:"Chia sẻ bởi {name}", progressDone:"{label} hoàn thành", farmlands:"{n} thửa ruộng", mapTitle:"Vị trí thửa ruộng", noLands:"Không có thửa ruộng", noNickname:"(không có tên)", done:"Hoàn thành", incomplete:"Chưa xong", excluded:"Loại trừ", completedBy:"hoàn thành {date} ({name})", completedNoName:"hoàn thành {date}", footer:"Liên kết chia sẻ 1 ngày — bạn có thể đánh dấu hoàn thành / chưa xong. Tự động hết hạn sau 24 giờ.", processing:"Đang xử lý…", toggleFail:"Không thể thay đổi trạng thái", langLabel:"Ngôn ngữ", workNameFallback:"(không có tên)", viewAll:"Xem tất cả", backToList:"Về danh sách" },
+            th: { checking:"กำลังตรวจสอบลิงก์แชร์…", invalidLink:"ลิงก์ไม่ถูกต้อง — การแชร์ถูกยกเลิกหรือไม่มีอยู่", expiredLink:"ลิงก์หมดอายุหรือถูกยกเลิก — กรุณาขอลิงก์ใหม่", expired24:"ลิงก์หมดอายุ — เกิน 24 ชั่วโมงแล้ว กรุณาขอลิงก์ใหม่", anonFail:"เข้าสู่ระบบแบบไม่ระบุตัวตนล้มเหลว", parseFail:"โหลดข้อมูลไม่สำเร็จ", error:"ข้อผิดพลาด", shareTitle:"แชร์ 1 วัน", remaining:"เหลือ {h} ชั่วโมง {m} นาที", sharedBy:"แชร์โดย {name}", progressDone:"{label} เสร็จ", farmlands:"{n} แปลง", mapTitle:"ตำแหน่งแปลงนา", noLands:"ไม่มีแปลง", noNickname:"(ไม่มีชื่อ)", done:"เสร็จแล้ว", incomplete:"ยังไม่เสร็จ", excluded:"ยกเว้น", completedBy:"เสร็จ {date} ({name})", completedNoName:"เสร็จ {date}", footer:"ลิงก์แชร์ 1 วัน — คุณสามารถทำเครื่องหมายเสร็จ / ยังไม่เสร็จ หมดอายุอัตโนมัติใน 24 ชั่วโมง", processing:"กำลังดำเนินการ…", toggleFail:"เปลี่ยนสถานะไม่สำเร็จ", langLabel:"ภาษา", workNameFallback:"(ไม่มีชื่อ)", viewAll:"ดูทั้งหมด", backToList:"กลับไปที่รายการ" },
+            km: { checking:"កំពុងពិនិត្យតំណចែករំលែក…", invalidLink:"តំណមិនត្រឹមត្រូវ — ការចែករំលែកត្រូវបានលុបចោល ឬមិនមាន។", expiredLink:"តំណផុតកំណត់ ឬត្រូវបានលុបចោល — សូមស្នើសុំតំណថ្មី។", expired24:"តំណផុតកំណត់ — លើសពី ២៤ ម៉ោង។ សូមស្នើសុំតំណថ្មី។", anonFail:"ការចូលអនាមិកបានបរាជ័យ", parseFail:"មិនអាចផ្ទុកទិន្នន័យ", error:"កំហុស", shareTitle:"ការចែករំលែក ១ ថ្ងៃ", remaining:"នៅសល់ {h} ម៉ោង {m} នាទី", sharedBy:"ចែករំលែកដោយ {name}", progressDone:"{label} រួចរាល់", farmlands:"ដីស្រែ {n}", mapTitle:"ទីតាំងដីស្រែ", noLands:"គ្មានដីស្រែ", noNickname:"(គ្មានឈ្មោះ)", done:"រួចរាល់", incomplete:"មិនទាន់រួច", excluded:"លើកលែង", completedBy:"រួចរាល់ {date} ({name})", completedNoName:"រួចរាល់ {date}", footer:"តំណចែករំលែក ១ ថ្ងៃ — អ្នកអាចសម្គាល់ថារួច / មិនទាន់រួច។ ផុតកំណត់ស្វ័យប្រវត្តិក្នុង ២៤ ម៉ោង។", processing:"កំពុងដំណើរការ…", toggleFail:"មិនអាចផ្លាស់ប្តូរស្ថានភាព", langLabel:"ភាសា", workNameFallback:"(គ្មានឈ្មោះ)", viewAll:"មើលទាំងអស់", backToList:"ត្រឡប់ទៅបញ្ជី" },
+            ne: { checking:"साझेदारी लिङ्क जाँच गर्दै…", invalidLink:"अमान्य लिङ्क — यो साझेदारी रद्द गरिएको वा अवस्थित छैन।", expiredLink:"लिङ्कको म्याद सकियो वा रद्द गरियो — कृपया नयाँ लिङ्क माग्नुहोस्।", expired24:"लिङ्कको म्याद सकियो — २४ घण्टाभन्दा बढी भयो। कृपया नयाँ लिङ्क माग्नुहोस्।", anonFail:"बेनामी साइन-इन असफल", parseFail:"डेटा लोड गर्न सकिएन", error:"त्रुटि", shareTitle:"१ दिने साझेदारी", remaining:"{h} घण्टा {m} मिनेट बाँकी", sharedBy:"{name} द्वारा साझा", progressDone:"{label} सम्पन्न", farmlands:"{n} खेत", mapTitle:"खेतको स्थान", noLands:"खेत छैन", noNickname:"(नाम छैन)", done:"सम्पन्न", incomplete:"बाँकी", excluded:"बहिष्कृत", completedBy:"सम्पन्न {date} ({name})", completedNoName:"सम्पन्न {date}", footer:"१ दिने साझेदारी लिङ्क — तपाईं सम्पन्न / बाँकी चिन्ह लगाउन सक्नुहुन्छ। २४ घण्टापछि स्वतः म्याद सकिन्छ।", processing:"प्रशोधन गर्दै…", toggleFail:"स्थिति परिवर्तन गर्न सकिएन", langLabel:"भाषा", workNameFallback:"(नाम छैन)", viewAll:"सबै हेर्नुहोस्", backToList:"सूचीमा फर्कनुहोस्" },
         };
         const DP_LANG_NAMES = { ko:"한국어", en:"English", vi:"Tiếng Việt", th:"ไทย", km:"ខ្មែរ", ne:"नेपाली" };
         const DP_TR_LABEL = { ko:"번역", en:"Translate", vi:"Dịch", th:"แปล", km:"បកប្រែ", ne:"अनुवाद" };
@@ -1444,7 +1476,11 @@
                         ${pass.createdByName ? `<div style="font-size:11px; opacity:0.75; margin-top:8px;">${t('sharedBy', { name: escapeHtml(pass.createdByName) })}</div>` : ''}
                     </div>
                     <div id="dp-map-wrap" style="margin:0 0 12px; border-radius:10px; overflow:hidden; border:0.5px solid #DDD9CC; display:none;">
-                        <div style="background:#2F5D3D; color:#fff; font-size:12px; padding:6px 12px;">🗺️ ${t('mapTitle')}</div>
+                        <div style="background:#2F5D3D; color:#fff; font-size:12px; padding:6px 12px; display:flex; align-items:center; gap:8px;">
+                            <span style="flex:1;">🗺️ ${t('mapTitle')}</span>
+                            <button id="dp-map-full" style="background:rgba(255,255,255,0.18); color:#fff; border:1px solid rgba(255,255,255,0.45); border-radius:6px; padding:3px 10px; font-size:12px; font-weight:600; cursor:pointer; flex:none;">⛶ ${t('viewAll')}</button>
+                        </div>
+                        <button id="dp-map-back" style="display:none; position:fixed; top:12px; left:12px; z-index:2147483647; background:#2F5D3D; color:#fff; border:0; border-radius:8px; padding:10px 14px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.35);">← ${t('backToList')}</button>
                         <iframe id="dp-map" title="${t('mapTitle')}" style="width:100%; height:320px; border:0; display:block;"></iframe>
                     </div>
                     <div style="font-size:13px; color:#6B7068; margin: 0 4px 8px;">${t('farmlands', { n: (work.lands || []).length })}</div>
@@ -1478,6 +1514,48 @@
             });
             mountDayPassMap(farmLands, statusById);
             attachDayPassToggles(viewer, pass);
+            wireDayPassMapFullscreen();
+        }
+
+        // 지도 '전체보기'(전체화면) ↔ '목록으로'(인라인 복귀) 토글.
+        // 전체보기: 지도 iframe 을 뷰포트 전체로 확대 + farmworkMap.fitAll() 로 모든 농지 맞춤.
+        function wireDayPassMapFullscreen() {
+            const wrap = document.getElementById('dp-map-wrap');
+            const iframe = document.getElementById('dp-map');
+            const fullBtn = document.getElementById('dp-map-full');
+            const backBtn = document.getElementById('dp-map-back');
+            if (!wrap || !iframe || !fullBtn || !backBtn) return;
+            let isFull = false;
+            const enter = () => {
+                if (isFull) return;
+                isFull = true;
+                wrap.style.position = 'fixed';
+                wrap.style.top = '0'; wrap.style.left = '0'; wrap.style.right = '0'; wrap.style.bottom = '0';
+                wrap.style.margin = '0'; wrap.style.zIndex = '2147483646';
+                wrap.style.borderRadius = '0'; wrap.style.border = '0';
+                iframe.style.height = '100%';
+                fullBtn.style.display = 'none';
+                backBtn.style.display = 'block';
+                try { document.body.style.overflow = 'hidden'; } catch (e) {}
+                const fit = () => { try { iframe.contentWindow.farmworkMap.fitAll(); } catch (e) {} };
+                setTimeout(fit, 80); setTimeout(fit, 350);
+            };
+            const exit = () => {
+                if (!isFull) return;
+                isFull = false;
+                wrap.style.position = ''; wrap.style.top = ''; wrap.style.left = '';
+                wrap.style.right = ''; wrap.style.bottom = ''; wrap.style.margin = '0 0 12px';
+                wrap.style.zIndex = ''; wrap.style.borderRadius = '10px';
+                wrap.style.border = '0.5px solid #DDD9CC';
+                iframe.style.height = '320px';
+                backBtn.style.display = 'none';
+                fullBtn.style.display = 'block';
+                try { document.body.style.overflow = ''; } catch (e) {}
+                setTimeout(() => { try { iframe.contentWindow.farmworkMap.fitAll(); } catch (e) {} }, 80);
+                try { wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+            };
+            fullBtn.addEventListener('click', enter);
+            backBtn.addEventListener('click', exit);
         }
 
         // 완료/미완료 토글 — updateDayPassWork Cloud Function 호출(URL token 이 인가 근거).
@@ -1532,7 +1610,7 @@
                 sessionStorage.setItem('farmwork_map_data', JSON.stringify({ apiKey: VWORLD_KEY, lands: lands, focusZoom: 15, viewerMode: true }));
                 wrap.style.display = 'block';
                 // 캐시버스트 — 지도 파일 변경 시 이 버전을 올려야 브라우저가 새 지도를 받음.
-                iframe.src = 'map/farmwork_map.html?v=3';
+                iframe.src = 'map/farmwork_map.html?v=4';
             } catch (e) { console.warn('[DayPassViewer] map mount 실패', e); }
         }
 

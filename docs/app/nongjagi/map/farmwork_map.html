@@ -103,6 +103,15 @@ console.log("[Farmwork] map.html script start, ol=" + typeof window.ol);
   }
 
   window.farmworkMap = {
+    // 전체보기 — 컨테이너 크기 재측정 후 모든 농지가 보이도록 카메라 맞춤. 1일 공유 뷰어 '전체보기'용.
+    fitAll: function(){
+      try {
+        if (!map) return;
+        map.updateSize();
+        setTimeout(function(){ try { if (map) { map.updateSize(); fitToBounds(); } } catch (e) {} }, 60);
+        fitToBounds();
+      } catch (e) { console.warn("[Farmwork] fitAll failed: " + e.message); }
+    },
     // 카메라를 주어진 좌표로 이동 + 현위치 점도 거기로 갱신 (FAB '현재 위치로' 버튼용)
     recenter: function(lat, lng){
       try {
