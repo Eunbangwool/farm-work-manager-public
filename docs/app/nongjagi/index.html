@@ -9,17 +9,17 @@
     // 농작이 웹앱은 Firebase Hosting(farm-work-manager-prod.web.app)으로 이전됨.
     // 과거에 배포된 1일공유 링크(?dayPass=...&farm=...) 호환을 위해 쿼리/해시를 보존해 리다이렉트.
     (function () {
-      var dest = "https://farm-work-manager-prod.web.app/" + location.search + location.hash;
+      var dest = "https://farm-work-manager-prod.web.app/app/" + location.search + location.hash;
       location.replace(dest);
     })();
   </script>
 </head>
 <body style="font-family:system-ui,-apple-system,'Malgun Gothic',sans-serif;padding:24px;line-height:1.6">
   <p>농작이 웹으로 이동합니다…</p>
-  <p>자동으로 넘어가지 않으면 <a id="go" href="https://farm-work-manager-prod.web.app/">여기</a>를 누르세요.</p>
+  <p>자동으로 넘어가지 않으면 <a id="go" href="https://farm-work-manager-prod.web.app/app/">여기</a>를 누르세요.</p>
   <script>
     document.getElementById('go').href =
-      "https://farm-work-manager-prod.web.app/" + location.search + location.hash;
+      "https://farm-work-manager-prod.web.app/app/" + location.search + location.hash;
   </script>
 </body>
 </html>
